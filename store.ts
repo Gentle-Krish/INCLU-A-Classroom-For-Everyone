@@ -300,7 +300,7 @@ const defaultVoiceConfig: VoiceConfig = {
   echoCancellation: true,
   autoGainControl: true,
   audioQuality: 'high',
-  language: 'id-ID',
+  language: 'en-US',
   silenceDetectionTimeout: 2.5
 };
 
@@ -310,8 +310,9 @@ const getInitialVoiceConfig = (): VoiceConfig => {
     const saved = localStorage.getItem('chalk_voice_config');
     if (saved) {
       const parsed = JSON.parse(saved);
-      // Hard enforce continuous manual recording (0) - eliminate legacy 10s cutoff
-      return { ...defaultVoiceConfig, ...parsed, autoStopSeconds: 0 };
+      // Migrate legacy id-ID default to English
+      const lang = (!parsed.language || parsed.language === 'id-ID') ? 'en-US' : parsed.language;
+      return { ...defaultVoiceConfig, ...parsed, language: lang, autoStopSeconds: 0 };
     }
   } catch {}
   return defaultVoiceConfig;

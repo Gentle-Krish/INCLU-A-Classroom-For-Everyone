@@ -831,6 +831,32 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose }) => {
                     </button>
                   </div>
                 </Field>
+
+                <Field label="Voice recognition language" hint="Select the primary language the teacher speaks into the microphone">
+                  <select
+                    value={localVoiceConfig.language || 'en-US'}
+                    onChange={(e) => {
+                      const newLang = e.target.value;
+                      setLocalVoiceConfig({ ...localVoiceConfig, language: newLang });
+                      try { localStorage.setItem('user_explicit_voice_lang', '1'); } catch {}
+                    }}
+                    className="w-full bg-[#FFF6EE] border-2 border-[#E7DDD2] rounded-2xl px-4 py-3 text-xs font-bold text-[#3F2A1D] focus:outline-none focus:border-[#6B4423] cursor-pointer"
+                  >
+                    <option value="en-IN">English (India) - en-IN</option>
+                    <option value="en-US">English (US) - en-US</option>
+                    <option value="hi-IN">Hindi (हिंदी) - hi-IN</option>
+                    <option value="es-ES">Spanish (Español) - es-ES</option>
+                    <option value="fr-FR">French (Français) - fr-FR</option>
+                    <option value="ar-SA">Arabic (العربية) - ar-SA</option>
+                    <option value="ru-RU">Russian (Русский) - ru-RU</option>
+                    <option value="zh-CN">Chinese (中文 - 普通话) - zh-CN</option>
+                    <option value="ja-JP">Japanese (日本語) - ja-JP</option>
+                    <option value="ko-KR">Korean (한국어) - ko-KR</option>
+                    <option value="de-DE">German (Deutsch) - de-DE</option>
+                    <option value="pt-BR">Portuguese (Português) - pt-BR</option>
+                    <option value="id-ID">Indonesian (Bahasa Indonesia) - id-ID</option>
+                  </select>
+                </Field>
               </Section>
 
               <Section

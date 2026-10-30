@@ -128,7 +128,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ canvasRef }) => {
               selectedVertexModel: storeState.selectedVertexModel,
               selectedGeminiModel: storeState.selectedGeminiModel,
               selectedOllamaModel: storeState.selectedOllamaModel,
-              language: storeState.language || 'id',
+              language: storeState.voiceConfig?.language || 'en-US',
               geminiApiKey: storeState.geminiApiKey,
               aiPreference: storeState.aiPreference
             })
@@ -297,7 +297,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ canvasRef }) => {
         recognitionRef.current = new SpeechRecognition();
         recognitionRef.current.continuous = true; // Use continuous for better experience
         recognitionRef.current.interimResults = true;
-        recognitionRef.current.lang = language === 'en' ? 'en-US' : 'id-ID';
+        recognitionRef.current.lang = voiceConfig?.language || 'en-US';
 
         recognitionRef.current.onresult = (event: any) => {
           let finalTranscript = '';
@@ -501,7 +501,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ canvasRef }) => {
 
         if (isWebSpeech) {
           if (recognitionRef.current) {
-            const targetLang = voiceConfig.language === 'en-US' ? 'en-US' : (voiceConfig.language === 'id-ID' ? 'id-ID' : (language === 'en' ? 'en-US' : 'id-ID'));
+            const targetLang = voiceConfig?.language || 'en-US';
             recognitionRef.current.lang = targetLang;
             try { recognitionRef.current.stop(); } catch(e) {}
 
@@ -575,7 +575,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ canvasRef }) => {
                     selectedVertexModel: storeState.selectedVertexModel,
                     selectedGeminiModel: storeState.selectedGeminiModel,
                     selectedOllamaModel: storeState.selectedOllamaModel,
-                    language: storeState.language || 'en',
+                    language: storeState.voiceConfig?.language || 'en-US',
                     transcribeMode: storeState.transcribeMode
                   })
                 });
