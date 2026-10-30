@@ -48,7 +48,7 @@ const App: React.FC = () => {
   const pendingQuestWrite = useRef(false);
   const [isMobileLayout, setIsMobileLayout] = useState(false);
 
-  const { roomId, isViewer, startClass, openQuest, closeQuest } = useSocketSync(canvasRef);
+  const { roomId, isViewer, startClass, openQuest, closeQuest, changeRoomId } = useSocketSync(canvasRef);
   const { loadSessions } = useStore();
 
   const {
@@ -410,6 +410,7 @@ const App: React.FC = () => {
               isOpen={isShareOpen}
               onClose={() => setIsShareOpen(false)}
               roomId={roomId}
+              onRefreshRoomId={changeRoomId}
               onStartClass={startClass}
             />
             <QuestPanel

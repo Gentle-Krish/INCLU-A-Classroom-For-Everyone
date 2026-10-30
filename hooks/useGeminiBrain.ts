@@ -11,6 +11,7 @@ import { isQuestCommand } from '../utils/questSchema';
 import { algorithmLesson } from '../utils/algorithmTrace';
 import { equationLine, equationMarkdown, isNewPageRequest, penFontSize, penLine, writeTextIntent, isUnsupportedDrawingRequest } from '../utils/boardIntent';
 import { visiblePageFrame } from '../utils/boardScroll';
+import { smoothFocusCanvas } from '../utils/canvasNavigation';
 import { STANDARD_FONT_SIZES, resolveFontSize } from '../constants';
 
 const logger = createLogger('gemini-brain');
@@ -208,23 +209,160 @@ export function evaluateJevSystemOne(
   }
 
   // 1. Instant Reflex Handlers (<15ms, zero LLM roundtrip)
+  const isRunTimerPrompt =
+    /\b(?:run|start|resume|play|continue|jalankan|mulai|lanjutkan|turn on|begin)\s+(?:the\s+)?(?:created\s+)?(?:timer|stopwatch)\b/i.test(norm) ||
+    /\b(?:timer|stopwatch)\s+(?:run|start|resume|play|jalankan|mulai)\b/i.test(norm) ||
+    /^(?:run|start)\s+(?:the\s+)?timer\b/i.test(norm);
+
+  if (isRunTimerPrompt) {
+    const existingTimers = Object.values(storeState.domElements || {}).filter((el: any) => el.componentType === 'TIMER') as any[];
+    if (existingTimers.length > 0) {
+      const targetTimer = existingTimers[existingTimers.length - 1];
+      if (typeof storeState.updateDomElement === 'function') {
+        storeState.updateDomElement(targetTimer.id, {
+          ...targetTimer,
+          config: {
+            ...targetTimer.config,
+            isActive: true,
+            isRunning: true,
+          }
+        });
+        if (canvas) {
+          smoothFocusCanvas(canvas, {
+            left: (targetTimer.x ?? 960) - (targetTimer.width || 340) / 2,
+            top: (targetTimer.y ?? 540) - (targetTimer.height || 460) / 2,
+            width: targetTimer.width || 340,
+            height: targetTimer.height || 460,
+          });
+        }
+        window.dispatchEvent(new CustomEvent('focusCanvasPlaceholder', {
+          detail: { id: targetTimer.id, x: targetTimer.x, y: targetTimer.y, width: targetTimer.width, height: targetTimer.height }
+        }));
+      }
+      return { handled: true, actionTaken: 'START_TIMER', message: '⏱️ Timer is running.' };
+    }
+  }
+
+  const isPauseTimerPrompt =
+    /\b(?:pause|stop|freeze|jeda|hentikan)\s+(?:the\s+)?(?:timer|stopwatch)\b/i.test(norm) ||
+    /\b(?:timer|stopwatch)\s+(?:pause|stop|jeda)\b/i.test(norm);
+
+  if (isPauseTimerPrompt) {
+    const existingTimers = Object.values(storeState.domElements || {}).filter((el: any) => el.componentType === 'TIMER') as any[];
+    if (existingTimers.length > 0) {
+      const targetTimer = existingTimers[existingTimers.length - 1];
+      if (typeof storeState.updateDomElement === 'function') {
+        storeState.updateDomElement(targetTimer.id, {
+          ...targetTimer,
+          config: {
+            ...targetTimer.config,
+            isActive: false,
+            isRunning: false,
+          }
+        });
+        if (canvas) {
+          smoothFocusCanvas(canvas, {
+            left: (targetTimer.x ?? 960) - (targetTimer.width || 340) / 2,
+            top: (targetTimer.y ?? 540) - (targetTimer.height || 460) / 2,
+            width: targetTimer.width || 340,
+            height: targetTimer.height || 460,
+          });
+        }
+        window.dispatchEvent(new CustomEvent('focusCanvasPlaceholder', {
+          detail: { id: targetTimer.id, x: targetTimer.x, y: targetTimer.y, width: targetTimer.width, height: targetTimer.height }
+        }));
+      }
+      return { handled: true, actionTaken: 'PAUSE_TIMER', message: '⏱️ Timer paused.' };
+    }
+  }
+
+  const isResetTimerPrompt =
+    /\b(?:reset|restart|ulang|ulangi)\s+(?:the\s+)?(?:timer|stopwatch)\b/i.test(norm) ||
+    /\b(?:timer|stopwatch)\s+(?:reset|restart|ulang)\b/i.test(norm);
+
+  if (isResetTimerPrompt) {
+    const existingTimers = Object.values(storeState.domElements || {}).filter((el: any) => el.componentType === 'TIMER') as any[];
+    if (existingTimers.length > 0) {
+      const targetTimer = existingTimers[existingTimers.length - 1];
+      if (typeof storeState.updateDomElement === 'function') {
+        storeState.updateDomElement(targetTimer.id, {
+          ...targetTimer,
+          config: {
+            ...targetTimer.config,
+            isActive: false,
+            isRunning: false,
+            resetKey: Date.now(),
+          }
+        });
+        if (canvas) {
+          smoothFocusCanvas(canvas, {
+            left: (targetTimer.x ?? 960) - (targetTimer.width || 340) / 2,
+            top: (targetTimer.y ?? 540) - (targetTimer.height || 460) / 2,
+            width: targetTimer.width || 340,
+            height: targetTimer.height || 460,
+          });
+        }
+        window.dispatchEvent(new CustomEvent('focusCanvasPlaceholder', {
+          detail: { id: targetTimer.id, x: targetTimer.x, y: targetTimer.y, width: targetTimer.width, height: targetTimer.height }
+        }));
+      }
+      return { handled: true, actionTaken: 'RESET_TIMER', message: '⏱️ Timer reset.' };
+    }
+  }
+
   const timerMatchA = norm.match(/(?:start|set|create|make|add|put|buka|pasang)?\s*(?:a\s+)?(\d+)\s*(minutes?|mins?|m|seconds?|secs?|s|hours?|hrs?|h|menit|detik|jam)?\s*(?:timer|stopwatch)/i);
   const timerMatchB = norm.match(/(?:start|set|create|make|add|put|buka|pasang)?\s*(?:a\s+)?(?:timer|stopwatch)\s*(?:for|selama)?\s*(\d+)?\s*(minutes?|mins?|m|seconds?|secs?|s|hours?|hrs?|h|menit|detik|jam)?/i);
 
-  if (timerMatchA || (timerMatchB && (timerMatchB[1] || norm.includes('timer')))) {
+  if (timerMatchA || (timerMatchB && (timerMatchB[1] || norm.includes('timer') || norm.includes('stopwatch')))) {
     const num = timerMatchA ? parseInt(timerMatchA[1], 10) : (timerMatchB && timerMatchB[1] ? parseInt(timerMatchB[1], 10) : 5);
     const rawUnit = timerMatchA ? timerMatchA[2] : (timerMatchB ? timerMatchB[2] : 'm');
     const unit = (rawUnit || 'm').toLowerCase();
     const isSeconds = unit.startsWith('s') || unit.startsWith('det');
     const isHours = unit.startsWith('h') || unit.startsWith('jam');
     const seconds = isSeconds ? num : isHours ? num * 3600 : num * 60;
+    const durationLabel = seconds >= 60 ? `${Math.round(seconds / 60)}m` : `${seconds}s`;
+
+    const wantsMultiple = /\b(?:another|second|2nd|two|2|tambah|lagi|baru)\b/i.test(norm);
+    const existingTimers = Object.values(storeState.domElements || {}).filter((el: any) => el.componentType === 'TIMER') as any[];
+
+    if (existingTimers.length > 0 && !wantsMultiple) {
+      // Single timer principle: reuse/update existing timer rather than spawning duplicate
+      const targetTimer = existingTimers[existingTimers.length - 1];
+      if (typeof storeState.updateDomElement === 'function') {
+        storeState.updateDomElement(targetTimer.id, {
+          ...targetTimer,
+          config: {
+            ...targetTimer.config,
+            seconds,
+            mode: 'TIMER',
+            isActive: true,
+            isRunning: true,
+            resetKey: Date.now(),
+          }
+        });
+        if (canvas) {
+          smoothFocusCanvas(canvas, {
+            left: (targetTimer.x ?? 960) - (targetTimer.width || 340) / 2,
+            top: (targetTimer.y ?? 540) - (targetTimer.height || 460) / 2,
+            width: targetTimer.width || 340,
+            height: targetTimer.height || 460,
+          });
+        }
+        window.dispatchEvent(new CustomEvent('focusCanvasPlaceholder', {
+          detail: { id: targetTimer.id, x: targetTimer.x, y: targetTimer.y, width: targetTimer.width, height: targetTimer.height }
+        }));
+      }
+      if (typeof storeState.toggleTimer === 'function' && typeof storeState.updateDomElement !== 'function' && !storeState.isTimerOpen) {
+        storeState.toggleTimer();
+      }
+      return { handled: true, actionTaken: 'TOGGLE_TIMER', message: `⏱️ ${durationLabel} timer updated on the whiteboard.` };
+    }
 
     if (typeof storeState.updateDomElement === 'function') {
       const vpt = canvas?.viewportTransform || [1, 0, 0, 1, 0, 0];
       const zoom = canvas?.getZoom?.() || vpt[0] || 1;
       const canvasW = canvas?.getWidth?.() ?? canvas?.width ?? 1920;
       const canvasH = canvas?.getHeight?.() ?? canvas?.height ?? 1080;
-      const existingTimers = Object.values(storeState.domElements || {}).filter((el: any) => el.componentType === 'TIMER') as any[];
       const offset = existingTimers.length * 36;
       const spawnX = Math.round((-vpt[4] + canvasW * 0.72) / zoom) + offset;
       const spawnY = Math.round((-vpt[5] + canvasH * 0.32) / zoom) + offset;
@@ -233,7 +371,7 @@ export function evaluateJevSystemOne(
         id,
         html: '<div>Timer</div>',
         componentType: 'TIMER',
-        config: { seconds, mode: 'TIMER', isRunning: true, isVisualPie: true },
+        config: { seconds, mode: 'TIMER', isActive: true, isRunning: true, isVisualPie: true },
         x: spawnX,
         y: spawnY,
         width: 340,
@@ -247,9 +385,12 @@ export function evaluateJevSystemOne(
         detail: { id, x: spawnX, y: spawnY, width: 340, height: 460, autofocus: true }
       }));
     }
-    const durationLabel = seconds >= 60 ? `${Math.round(seconds / 60)}m` : `${seconds}s`;
+    if (typeof storeState.toggleTimer === 'function' && typeof storeState.updateDomElement !== 'function' && !storeState.isTimerOpen) {
+      storeState.toggleTimer();
+    }
     return { handled: true, actionTaken: 'TOGGLE_TIMER', message: `⏱️ ${durationLabel} timer created on the whiteboard.` };
-  }
+  }
+
   if (/^(tutup|close|sembunyikan|hide)\s+(timer|stopwatch)/i.test(norm)) {
     if (storeState.isTimerOpen) storeState.toggleTimer();
     return { handled: true, actionTaken: 'CLOSE_TIMER', message: '⏱️ Timer closed.' };
@@ -618,7 +759,7 @@ export const useGeminiBrain = () => {
             zIndex: 12,
           });
           window.dispatchEvent(new CustomEvent('addCanvasPlaceholder', {
-            detail: { id, x: frame.x, y: frame.y, width: frame.width, height: frame.height },
+            detail: { id, x: frame.x, y: frame.y, width: frame.width, height: frame.height, autofocus: true },
           }));
         }
         if (jevResult.canvasText?.text && canvas) {
@@ -1220,6 +1361,23 @@ ${jevDirective}
             pWidth = 340; pHeight = 500;
           } else if (cType === 'TIMER') {
             pWidth = 340; pHeight = 460;
+            const doms = useStore.getState().domElements || {};
+            const existingTimer = Object.entries(doms).find(([_, el]: [string, any]) => el.componentType === 'TIMER');
+            const wantsMultiple = /\b(?:another|second|2nd|two|2|tambah|lagi|baru)\b/i.test(prompt);
+            if (existingTimer && !wantsMultiple) {
+              actionType = 'EDIT_HTML';
+              const [existingId, existingEl] = existingTimer;
+              payload = {
+                objectId: existingId,
+                config: {
+                  ...existingEl.config,
+                  ...(configObj || {}),
+                  isActive: true,
+                  isRunning: true,
+                  resetKey: Date.now()
+                }
+              };
+            }
           } else if (cType === 'ATTENDANCE' || cType === 'PRESENSI') {
             pWidth = 460; pHeight = 540;
           } else if (cType === 'TODOLIST') {

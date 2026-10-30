@@ -13,6 +13,7 @@ console.warn = (...args: any[]) => {
 import express from "express";
 import path from "path";
 import fs from "fs";
+import child_process from "child_process";
 
 import { createServer } from "http";
 import { Server } from "socket.io";
@@ -109,6 +110,57 @@ function loadRooms(): Map<string, RoomState> {
     logger.error("Failed to load rooms", e);
   }
   return new Map();
+}
+
+let cachedSsid = '';
+let lastSsidCheck = 0;
+
+function getWifiSsid(): string {
+  const now = Date.now();
+  if (cachedSsid && now - lastSsidCheck < 10000) {
+    return cachedSsid;
+  }
+  lastSsidCheck = now;
+  try {
+    if (process.platform === 'win32') {
+      const output = child_process.execSync('netsh wlan show interfaces', {
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 2000
+      });
+      const match = output.match(/^\s*SSID\s*:\s*(.+)$/m);
+      if (match && match[1] && match[1].trim() && !match[1].includes('BSSID')) {
+        cachedSsid = match[1].trim();
+        return cachedSsid;
+      }
+    } else if (process.platform === 'darwin') {
+      const output = child_process.execSync('networksetup -getairportnetwork en0', {
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 2000
+      });
+      const match = output.match(/Current Wi-Fi Network:\s*(.+)$/m);
+      if (match && match[1]) {
+        cachedSsid = match[1].trim();
+        return cachedSsid;
+      }
+    } else if (process.platform === 'linux') {
+      const output = child_process.execSync('nmcli -t -f active,ssid dev wifi', {
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 2000
+      });
+      const match = output.match(/^yes:(.+)$/m);
+      if (match && match[1]) {
+        cachedSsid = match[1].trim();
+        return cachedSsid;
+      }
+    }
+  } catch {
+    // fallback
+  }
+  cachedSsid = cachedSsid || 'Local Wi-Fi Network';
+  return cachedSsid;
 }
 
 async function startServer() {
@@ -233,6 +285,10 @@ async function startServer() {
       if (socket.data.role === "student") return;
       if (typeof roomId !== "string" || !roomId.trim() || roomId.length > 128) return;
       const id = roomId.trim();
+      if (socket.data.roomId && socket.data.roomId !== id) {
+        socket.leave(socket.data.roomId);
+        untrackBoard(socket.id);
+      }
       socket.data.role = "board";
       socket.data.roomId = id;
       socket.join(id);
@@ -503,7 +559,8 @@ async function startServer() {
       addresses,
       port: boundPort,
       primaryUrl: `http://${primaryIp}:${boundPort}`,
-      hostname: os.hostname()
+      hostname: os.hostname(),
+      wifiSsid: getWifiSsid(),
     });
   });
 

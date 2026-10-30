@@ -13,7 +13,7 @@ export const AutofocusReticle: React.FC = () => {
     setVisible(true);
     const timer = setTimeout(() => {
       setVisible(false);
-    }, 800);
+    }, 1100);
     return () => clearTimeout(timer);
   }, [target?.timestamp]);
 

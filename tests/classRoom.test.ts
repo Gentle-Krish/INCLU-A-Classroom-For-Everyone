@@ -58,11 +58,11 @@ describe('LAN address picker', () => {
 });
 
 describe('join QR', () => {
-  it('contains chalk:// and does not contain http', () => {
+  it('contains inclu:// and does not contain http', () => {
     const qr = buildJoinQrValue('192.168.1.20', 3030, '4821');
-    expect(qr).toContain('chalk://');
+    expect(qr).toContain('inclu://');
     expect(qr.includes('http')).toBe(false);
-    expect(qr).toBe('chalk://join?host=192.168.1.20&port=3030&room=4821');
+    expect(qr).toBe('inclu://join?host=192.168.1.20&port=3030&room=4821');
   });
 
   it('refuses a host that is already an http URL', () => {

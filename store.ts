@@ -719,7 +719,7 @@ export const useStore = create<AppStore>((set, get) => ({
     });
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('addCanvasPlaceholder', {
-        detail: { id, x: 960, y: 540, width: 440, height: 480 }
+        detail: { id, x: 960, y: 540, width: 440, height: 480, autofocus: true }
       }));
     }
   },
@@ -742,7 +742,7 @@ export const useStore = create<AppStore>((set, get) => ({
     });
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('addCanvasPlaceholder', {
-        detail: { id, x: 960, y: 540, width: 420, height: 380 }
+        detail: { id, x: 960, y: 540, width: 420, height: 380, autofocus: true }
       }));
     }
   },
@@ -765,7 +765,7 @@ export const useStore = create<AppStore>((set, get) => ({
     });
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('addCanvasPlaceholder', {
-        detail: { id, x: 960, y: 540, width: 460, height: 440 }
+        detail: { id, x: 960, y: 540, width: 460, height: 440, autofocus: true }
       }));
     }
   },
@@ -973,7 +973,8 @@ export const useStore = create<AppStore>((set, get) => ({
       pages: newPages, 
       currentPageIndex: newIndex,
       activeMindmapNodes: newPages[newIndex]?.mindmapNodes || [],
-      domElements: newPages[newIndex]?.dom || {}
+      domElements: newPages[newIndex]?.dom || {},
+      sessionLoadTimestamp: Date.now()
     };
   }),
 

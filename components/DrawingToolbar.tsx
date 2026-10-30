@@ -74,7 +74,7 @@ const Flyout: React.FC<FlyoutProps> = ({ open, children, align = 'top' }) => {
           animate={{ opacity: 1, x: 0, scale: 1 }}
           exit={{ opacity: 0, x: -8, scale: 0.94 }}
           transition={{ type: 'spring', stiffness: 420, damping: 30 }}
-          className={`absolute left-full ml-3.5 z-50 bg-[#FFF6EE]/95 backdrop-blur-2xl border border-[#E7DDD2] shadow-2xl shadow-[#3F2A1D]/10 rounded-[1.75rem] p-3.5 w-56 ${positionClass}`}
+          className={`absolute left-full ml-3.5 z-[100] bg-[#FFF6EE]/95 backdrop-blur-2xl border border-[#E7DDD2] shadow-2xl shadow-[#3F2A1D]/10 rounded-[1.75rem] p-3.5 w-56 ${positionClass}`}
         >
           {children}
         </motion.div>
@@ -181,12 +181,12 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
       {/* Click-outside backdrop overlay to auto-dismiss open flyouts smoothly */}
       {openPanel && (
         <div
-          className="fixed inset-0 z-40 bg-transparent pointer-events-auto"
+          className="fixed inset-0 z-[90] bg-transparent pointer-events-auto"
           onClick={close}
         />
       )}
 
-      <div className="absolute left-2 lg:left-4 top-1/2 -translate-y-1/2 pointer-events-auto z-50 flex flex-col items-center">
+      <div className="absolute left-2 lg:left-4 top-1/2 -translate-y-1/2 pointer-events-auto z-[100] flex flex-col items-center">
         {/* ── Hamburger Menu Button (Positioned just above the toolbar) ── */}
         <div className="relative mb-3.5">
           <motion.button
@@ -344,17 +344,38 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
           <Btn
             icon={Type}
             active={openPanel === 'text' || activeTool === 'TEXT'}
-            title="Text (T)"
+            title="Text (T) — Add text to whiteboard"
             onClick={() => {
-              if (activeTool !== 'TEXT') {
-                setActiveTool('TEXT');
+              if (openPanel === 'text') {
+                close();
               }
-              toggle('text');
+              window.dispatchEvent(new CustomEvent('addCanvasTextAtCenter'));
+              setActiveTool('SELECT');
             }}
           >
-            <ChevronRight size={7} className="absolute right-0.5 bottom-0.5 opacity-50" />
+            <ChevronRight
+              size={7}
+              className="absolute right-0.5 bottom-0.5 opacity-50 hover:opacity-100"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggle('text');
+              }}
+            />
           </Btn>
           <Flyout open={openPanel === 'text'} align="center">
+            {/* Primary Action Button: Add Text to Whiteboard */}
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('addCanvasTextAtCenter'));
+                close();
+              }}
+              className="w-full py-2.5 px-3 rounded-xl bg-[#6B4423] text-[#FBF6F0] font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-[#6B4423]/20 hover:bg-[#543317] active:scale-98 transition-all cursor-pointer mb-3"
+            >
+              <Type size={14} /> {t('addTextBox', 'Add text to whiteboard')}
+            </motion.button>
+
             <div className="text-[9px] font-black uppercase tracking-widest text-[#A08B7A] mb-2">{t('fontStyle', 'Font')}</div>
             {FONTS.map(f => (
               <button

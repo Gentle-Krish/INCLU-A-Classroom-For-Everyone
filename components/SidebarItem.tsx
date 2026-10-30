@@ -1,5 +1,4 @@
 import React from 'react';
-import { motion } from 'motion/react';
 import { LucideIcon } from 'lucide-react';
 
 interface SidebarItemProps {
@@ -7,25 +6,36 @@ interface SidebarItemProps {
   label: string;
   active?: boolean;
   onClick?: () => void;
+  trailing?: React.ReactNode;
 }
 
-export const SidebarItem: React.FC<SidebarItemProps> = ({ icon: Icon, label, active = false, onClick }) => (
-  <motion.button
-    whileHover={{ scale: 1.025 }}
-    whileTap={{ scale: 0.975 }}
+export const SidebarItem: React.FC<SidebarItemProps> = ({
+  icon: Icon,
+  label,
+  active = false,
+  onClick,
+  trailing,
+}) => (
+  <div
+    role="button"
+    tabIndex={0}
     onClick={onClick}
-    className={`relative flex items-center gap-3 w-full px-4 py-3 rounded-full transition-colors cursor-pointer select-none ${
-      active ? 'text-[#FBF6F0] font-bold' : 'text-[#6B4423]/80 hover:text-[#3F2A1D] hover:bg-[#F3EBE3] font-medium'
+    onKeyDown={(e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        onClick?.();
+      }
+    }}
+    className={`group relative flex items-center justify-between w-full px-4 py-2.5 rounded-full transition-all cursor-pointer select-none outline-none ${
+      active
+        ? 'text-[#FBF6F0] font-bold bg-[#6B4423] shadow-md shadow-[#6B4423]/20'
+        : 'text-[#6B4423]/80 hover:text-[#3F2A1D] hover:bg-[#F3EBE3] font-medium'
     }`}
   >
-    {active && (
-      <motion.span
-        layoutId="active-sidebar-pill"
-        className="absolute inset-0 rounded-full bg-[#6B4423] shadow-md shadow-[#6B4423]/20"
-        transition={{ type: 'spring', stiffness: 440, damping: 32 }}
-      />
-    )}
-    <Icon size={19} className={`relative z-10 transition-colors ${active ? 'text-[#F6D7A8]' : 'text-[#6B4423]/80'}`} />
-    <span className="relative z-10 text-[14px] tracking-tight">{label}</span>
-  </motion.button>
+    <div className="flex items-center gap-2 min-w-0">
+      <Icon size={19} className={`transition-colors shrink-0 ${active ? 'text-[#F6D7A8]' : 'text-[#6B4423]/80'}`} />
+      <span className="text-[14px] tracking-tight">{label}</span>
+      {trailing}
+    </div>
+  </div>
 );

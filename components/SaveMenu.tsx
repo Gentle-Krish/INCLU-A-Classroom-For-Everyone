@@ -94,7 +94,7 @@ export const SaveMenu: React.FC<SaveMenuProps> = ({ onExportClick }) => {
   };
 
   return (
-    <div className="relative font-sans" ref={menuRef}>
+    <div className={`relative font-sans ${isOpen ? 'z-50' : ''}`} ref={menuRef}>
       {/* Top Bar Trigger Button */}
       <button 
         type="button"

@@ -21,7 +21,7 @@ export const TimerTool: React.FC<TimerToolProps> = ({ config }) => {
   const [totalSeconds, setTotalSeconds] = useState<number>(parsedConfig?.seconds || 300);
   const [timeLeft, setTimeLeft] = useState<number>(parsedConfig?.seconds || 300);
   const [stopwatchTime, setStopwatchTime] = useState(0);
-  const [isActive, setIsActive] = useState(false);
+  const [isActive, setIsActive] = useState<boolean>(Boolean(parsedConfig?.isActive ?? parsedConfig?.isRunning));
   const [currentTime, setCurrentTime] = useState(new Date());
   const [alarmTime, setAlarmTime] = useState(parsedConfig?.alarmAt || '');
   const [isAlarmActive, setIsAlarmActive] = useState(false);
@@ -36,13 +36,20 @@ export const TimerTool: React.FC<TimerToolProps> = ({ config }) => {
       const cfg = typeof config === 'string' ? JSON.parse(config) : config;
       if (cfg.mode) setMode(cfg.mode);
       if (typeof cfg.seconds === 'number' && cfg.seconds > 0) {
-        setTotalSeconds(cfg.seconds);
-        setTimeLeft(cfg.seconds);
+        if (cfg.seconds !== totalSeconds || cfg.resetKey) {
+          setTotalSeconds(cfg.seconds);
+          setTimeLeft(cfg.seconds);
+        }
       }
       if (typeof cfg.isActive === 'boolean') {
         setIsActive(cfg.isActive);
       } else if (typeof cfg.isRunning === 'boolean') {
         setIsActive(cfg.isRunning);
+      }
+      if (cfg.resetKey && !cfg.isActive && !cfg.isRunning) {
+        setIsActive(false);
+        if (mode === 'TIMER') setTimeLeft(cfg.seconds || totalSeconds);
+        if (mode === 'STOPWATCH') setStopwatchTime(0);
       }
       if (cfg.alarmAt) {
         setAlarmTime(cfg.alarmAt);
@@ -52,7 +59,7 @@ export const TimerTool: React.FC<TimerToolProps> = ({ config }) => {
         setIsVisualPie(cfg.isVisualPie);
       }
     } catch {}
-  }, [config]);
+  }, [config, totalSeconds, mode]);
 
   const playChime = () => {
     try {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../join/beacon_listener.dart';
 import '../join/laptop_address.dart';
 import '../theme/chalk_theme.dart';
 import '../widgets/clay_bot.dart';
@@ -14,12 +15,16 @@ class JoinScreen extends StatefulWidget {
     required this.onSubmit,
     this.onSayAgain,
     this.knownName,
+    this.nearbyClasses,
+    this.onSelectNearby,
   });
 
   final VoidCallback onScan;
-  final void Function(String room, LaptopAddress address, {String? name}) onSubmit;
+  final void Function(String room, LaptopAddress? address, {String? name}) onSubmit;
   final VoidCallback? onSayAgain;
   final String? knownName;
+  final List<NearbyClass>? nearbyClasses;
+  final void Function(NearbyClass room)? onSelectNearby;
 
   @override
   State<JoinScreen> createState() => _JoinScreenState();
@@ -30,6 +35,7 @@ class _JoinScreenState extends State<JoinScreen> {
   final _address = TextEditingController();
   final _name = TextEditingController();
   final _roomFocus = FocusNode();
+  bool _showAdvancedIp = false;
 
   @override
   void dispose() {
@@ -44,12 +50,11 @@ class _JoinScreenState extends State<JoinScreen> {
     FocusManager.instance.primaryFocus?.unfocus();
     final room = _room.text.trim();
     if (!RegExp(r'^\d{4}$').hasMatch(room)) return;
-    final address = parseLaptopAddress(_address.text);
-    if (address == null) return;
     final typedName = _name.text.trim();
     if ((widget.knownName == null || widget.knownName!.trim().isEmpty) && typedName.isEmpty) {
       return;
     }
+    final address = _address.text.trim().isNotEmpty ? parseLaptopAddress(_address.text) : null;
     widget.onSubmit(
       room,
       address,
@@ -60,7 +65,9 @@ class _JoinScreenState extends State<JoinScreen> {
   @override
   Widget build(BuildContext context) {
     final ready = RegExp(r'^\d{4}$').hasMatch(_room.text.trim());
-    final address = parseLaptopAddress(_address.text);
+    final hasName = (widget.knownName != null && widget.knownName!.trim().isNotEmpty) || _name.text.trim().isNotEmpty;
+    final canSubmit = ready && hasName;
+
     return CreamScaffold(
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
@@ -83,6 +90,64 @@ class _JoinScreenState extends State<JoinScreen> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 18),
+
+            // Network suggestions when whiteboards are discovered on this Wi-Fi
+            if (widget.nearbyClasses != null && widget.nearbyClasses!.isNotEmpty) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: ChalkColors.creamDeep,
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(color: ChalkColors.green.withOpacity(0.4), width: 1.5),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x10000000),
+                      blurRadius: 18,
+                      offset: Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.wifi, color: ChalkColors.green, size: 20),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'WHITEBOARD FOUND ON THIS WI-FI',
+                          style: TextStyle(
+                            color: ChalkColors.green,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12,
+                            letterSpacing: 1.1,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    for (final item in widget.nearbyClasses!) ...[
+                      ClayButton(
+                        label: 'Connect to Class ${item.room}',
+                        color: ChalkColors.green,
+                        lip: ChalkColors.greenLip,
+                        onPressed: () {
+                          if (widget.onSelectNearby != null) {
+                            widget.onSelectNearby!(item);
+                          } else {
+                            widget.onSubmit(item.room, LaptopAddress(host: item.host, port: item.port));
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
             ClayButton(
               label: 'Scan the board',
               icon: const Icon(Icons.qr_code_2, color: Colors.white, size: 26),
@@ -128,7 +193,7 @@ class _JoinScreenState extends State<JoinScreen> {
                       _PeachDot(),
                       SizedBox(width: 8),
                       Text(
-                        'TYPE IT INSTEAD',
+                        'TYPE CODE TO JOIN',
                         style: TextStyle(
                           color: ChalkColors.brown,
                           fontWeight: FontWeight.w800,
@@ -195,44 +260,65 @@ class _JoinScreenState extends State<JoinScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 14),
-                  const _FieldLabel('LAPTOP ADDRESS'),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _address,
-                    keyboardType: TextInputType.url,
-                    autocorrect: false,
-                    onChanged: (_) => setState(() {}),
-                    onSubmitted: (_) => _submit(),
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                      color: ChalkColors.ink,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: '192.168.1.20:3000',
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 14,
-                      ),
-                      suffixIcon: address != null
-                          ? const Padding(
-                              padding: EdgeInsets.only(right: 10),
-                              child: _CheckMark(),
-                            )
-                          : null,
-                      suffixIconConstraints: const BoxConstraints(
-                        minWidth: 0,
-                        minHeight: 0,
+                  const SizedBox(height: 12),
+
+                  // Discreet optional manual IP toggle for advanced setups
+                  InkWell(
+                    onTap: () => setState(() => _showAdvancedIp = !_showAdvancedIp),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _showAdvancedIp ? Icons.arrow_drop_down : Icons.arrow_right,
+                            color: ChalkColors.brown.withOpacity(0.6),
+                            size: 20,
+                          ),
+                          Text(
+                            _showAdvancedIp ? 'Hide custom laptop IP' : 'Advanced: manual IP (optional)',
+                            style: TextStyle(
+                              color: ChalkColors.brown.withOpacity(0.7),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
+                  if (_showAdvancedIp) ...[
+                    const SizedBox(height: 8),
+                    const _FieldLabel('LAPTOP ADDRESS (OPTIONAL)'),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _address,
+                      keyboardType: TextInputType.url,
+                      autocorrect: false,
+                      onChanged: (_) => setState(() {}),
+                      onSubmitted: (_) => _submit(),
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: ChalkColors.ink,
+                      ),
+                      decoration: const InputDecoration(
+                        hintText: 'e.g. 192.168.1.20:3000',
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 14,
+                        ),
+                      ),
+                    ),
+                  ],
+
                   const SizedBox(height: 16),
                   ClayButton(
                     label: 'Join  →',
-                    color: ChalkColors.green,
-                    lip: ChalkColors.greenLip,
-                    onPressed: _submit,
+                    color: canSubmit ? ChalkColors.green : ChalkColors.creamButton,
+                    lip: canSubmit ? ChalkColors.greenLip : ChalkColors.creamLip,
+                    foreground: canSubmit ? Colors.white : ChalkColors.brownDeep,
+                    onPressed: canSubmit ? _submit : null,
                   ),
                 ],
               ),

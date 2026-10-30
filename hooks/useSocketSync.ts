@@ -382,5 +382,18 @@ export const useSocketSync = (canvasRef: React.RefObject<any>) => {
     socket.emit('close-quest', { roomId: room });
   }, [roomId]);
 
-  return { roomId, isViewer, startClass, openQuest, closeQuest };
+  const changeRoomId = useCallback((newId: string) => {
+    const formatted = newId.trim();
+    if (!/^\d{4}$/.test(formatted)) return;
+    try {
+      window.localStorage.setItem('chalk_class_number', formatted);
+    } catch {}
+    setRoomId(formatted);
+    const socket = socketRef.current;
+    if (socket?.connected) {
+      socket.emit('join-room', formatted);
+    }
+  }, []);
+
+  return { roomId, isViewer, startClass, openQuest, closeQuest, changeRoomId };
 };

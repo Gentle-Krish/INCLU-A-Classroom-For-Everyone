@@ -48,8 +48,17 @@ export function calculateFocusTransform(
 
   const leftInset = Math.min(88, width * 0.2);
   const padding = options?.padding ?? Math.min(32, height * 0.1);
-  const availableWidth = Math.max(1, width - leftInset - padding);
-  const availableHeight = Math.max(1, height - padding * 2);
+
+  // If the AI Assistant drawer sidebar is open on the right, respect its ~380px footprint
+  const isAiDrawerOpen = useStore.getState().isAiDrawerOpen;
+  const rightSidebarWidth = isAiDrawerOpen ? Math.min(390, width * 0.35) : 0;
+  const rightInset = Math.max(padding, rightSidebarWidth);
+
+  const topInset = Math.min(64, height * 0.1);
+  const bottomInset = Math.min(80, height * 0.12);
+
+  const availableWidth = Math.max(1, width - leftInset - rightInset);
+  const availableHeight = Math.max(1, height - topInset - bottomInset);
   const maxZoom = options?.maxZoom ?? 1;
 
   const zoom = Math.max(
@@ -61,13 +70,16 @@ export function calculateFocusTransform(
     )
   );
 
+  const visibleCenterX = leftInset + availableWidth / 2;
+  const visibleCenterY = topInset + availableHeight / 2;
+
   const transform = [
     zoom,
     0,
     0,
     zoom,
-    leftInset + availableWidth / 2 - (bounds.left + bounds.width / 2) * zoom,
-    height / 2 - (bounds.top + bounds.height / 2) * zoom,
+    visibleCenterX - (bounds.left + bounds.width / 2) * zoom,
+    visibleCenterY - (bounds.top + bounds.height / 2) * zoom,
   ];
 
   return transform;
@@ -138,19 +150,19 @@ export function smoothFocusCanvas(
       });
       setTimeout(() => {
         const cur = useStore.getState().autofocusTarget;
-        if (cur && Date.now() - cur.timestamp >= 850) {
+        if (cur && Date.now() - cur.timestamp >= 1100) {
           useStore.getState().setAutofocusTarget(null);
         }
-      }, 1000);
+      }, 1200);
     }
 
-    const duration = options?.duration ?? 450;
+    const duration = options?.duration ?? 800;
     const startTime = performance.now();
     let cancelled = false;
     let animId = 0;
 
-    // Camera autofocus damping curve (silky snap with cushioned settling)
-    const cameraEase = (t: number) => 1 - Math.pow(1 - t, 3.5);
+    // Camera autofocus damping curve (swift start with silky cushioned slow settling)
+    const cameraEase = (t: number) => 1 - Math.pow(1 - t, 3.8);
 
     const step = (now: number) => {
       if (cancelled) return;

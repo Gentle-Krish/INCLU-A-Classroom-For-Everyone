@@ -80,32 +80,43 @@ export const DomOverlay: React.FC = () => {
   useEffect(() => {
     if (!draggingWidget && !resizingWidget) return;
 
+    let latestX = 0;
+    let latestY = 0;
+    let hasPos = false;
+
+    const applyPos = (clientX: number, clientY: number) => {
+      const scale = viewportTransform[0] || 1;
+      if (draggingWidget) {
+        const deltaX = (clientX - draggingWidget.startMouseX) / scale;
+        const deltaY = (clientY - draggingWidget.startMouseY) / scale;
+
+        const newX = Math.round(draggingWidget.startElX + deltaX);
+        const newY = Math.round(draggingWidget.startElY + deltaY);
+
+        useStore.getState().updateDomElement(draggingWidget.id, { x: newX, y: newY });
+        window.dispatchEvent(new CustomEvent('moveCanvasPlaceholder', { detail: { id: draggingWidget.id, x: newX, y: newY } }));
+      } else if (resizingWidget) {
+        const deltaX = (clientX - resizingWidget.startMouseX) / scale;
+        const deltaY = (clientY - resizingWidget.startMouseY) / scale;
+
+        const newW = Math.max(260, Math.round(resizingWidget.startWidth + deltaX));
+        const newH = Math.max(180, Math.round(resizingWidget.startHeight + deltaY));
+
+        useStore.getState().updateDomElement(resizingWidget.id, { width: newW, height: newH });
+        window.dispatchEvent(new CustomEvent('resizeCanvasPlaceholder', { detail: { id: resizingWidget.id, width: newW, height: newH } }));
+      }
+    };
+
     const handleMouseMove = (e: MouseEvent) => {
+      latestX = e.clientX;
+      latestY = e.clientY;
+      hasPos = true;
       if (rafIdRef.current) return;
-      const { clientX, clientY } = e;
 
       rafIdRef.current = requestAnimationFrame(() => {
         rafIdRef.current = null;
-        const scale = viewportTransform[0] || 1;
-
-        if (draggingWidget) {
-          const deltaX = (clientX - draggingWidget.startMouseX) / scale;
-          const deltaY = (clientY - draggingWidget.startMouseY) / scale;
-
-          const newX = Math.round(draggingWidget.startElX + deltaX);
-          const newY = Math.round(draggingWidget.startElY + deltaY);
-
-          useStore.getState().updateDomElement(draggingWidget.id, { x: newX, y: newY });
-          window.dispatchEvent(new CustomEvent('moveCanvasPlaceholder', { detail: { id: draggingWidget.id, x: newX, y: newY } }));
-        } else if (resizingWidget) {
-          const deltaX = (clientX - resizingWidget.startMouseX) / scale;
-          const deltaY = (clientY - resizingWidget.startMouseY) / scale;
-
-          const newW = Math.max(260, Math.round(resizingWidget.startWidth + deltaX));
-          const newH = Math.max(180, Math.round(resizingWidget.startHeight + deltaY));
-
-          useStore.getState().updateDomElement(resizingWidget.id, { width: newW, height: newH });
-          window.dispatchEvent(new CustomEvent('resizeCanvasPlaceholder', { detail: { id: resizingWidget.id, width: newW, height: newH } }));
+        if (hasPos) {
+          applyPos(latestX, latestY);
         }
       });
     };
@@ -114,6 +125,9 @@ export const DomOverlay: React.FC = () => {
       if (rafIdRef.current) {
         cancelAnimationFrame(rafIdRef.current);
         rafIdRef.current = null;
+      }
+      if (hasPos) {
+        applyPos(latestX, latestY);
       }
       setDraggingWidget(null);
       setResizingWidget(null);

@@ -157,7 +157,7 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
         zIndex: 20
       });
 
-      const event = new CustomEvent('addCanvasPlaceholder', { detail: { id, x: centerX, y: centerY, width: 520, height: 420 } });
+      const event = new CustomEvent('addCanvasPlaceholder', { detail: { id, x: centerX, y: centerY, width: 520, height: 420, autofocus: true } });
       window.dispatchEvent(event);
 
       toast.success('📌 AI reply pinned to the whiteboard.');

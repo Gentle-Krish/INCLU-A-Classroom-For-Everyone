@@ -358,7 +358,7 @@ class _JoinFlowState extends State<JoinFlow> {
     setState(() => _stage = _Stage.pick);
   }
 
-  Future<void> _onTyped(String room, LaptopAddress address, {String? name}) async {
+  Future<void> _onTyped(String room, LaptopAddress? address, {String? name}) async {
     final typed = name?.trim();
     if (typed != null && typed.isNotEmpty) {
       await _store.saveName(typed);
@@ -366,7 +366,11 @@ class _JoinFlowState extends State<JoinFlow> {
       setState(() => _name = typed);
     }
     _dismissKeyboard();
-    await _begin(JoinTarget(host: address.host, port: address.port, room: room));
+    if (address != null) {
+      await _begin(JoinTarget(host: address.host, port: address.port, room: room));
+    } else {
+      await _begin(JoinTarget(room: room));
+    }
   }
 
   Future<void> _onScan() async {
@@ -462,6 +466,8 @@ class _JoinFlowState extends State<JoinFlow> {
       _Stage.askName => NameScreen(onSubmit: (name) => unawaited(_onName(name))),
       _Stage.pick => JoinScreen(
         knownName: _name,
+        nearbyClasses: _nearby,
+        onSelectNearby: (room) => unawaited(_begin(JoinTarget(host: room.host, port: room.port, room: room.room))),
         onScan: () => unawaited(_onScan()),
         onSayAgain: () => unawaited(_sayAgain()),
         onSubmit: (room, address, {name}) => unawaited(_onTyped(room, address, name: name)),

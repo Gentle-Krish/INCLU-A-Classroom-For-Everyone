@@ -66,7 +66,7 @@ export const BoardMenuPopup: React.FC<BoardMenuPopupProps> = ({ className = '' }
         <>
           {/* Click-outside backdrop (fully transparent, zero blur so toolbar remains completely crisp) */}
           <div
-            className="fixed inset-0 z-40 bg-transparent pointer-events-auto"
+            className="fixed inset-0 z-[90] bg-transparent pointer-events-auto"
             onClick={closeMenu}
           />
 
@@ -76,7 +76,7 @@ export const BoardMenuPopup: React.FC<BoardMenuPopupProps> = ({ className = '' }
             animate={{ opacity: 1, scale: 1, y: 0, x: 0 }}
             exit={{ opacity: 0, scale: 0.94, y: -8, x: 0 }}
             transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            className={`absolute left-[calc(100%+14px)] top-0 z-50 w-[264px] max-h-[min(82vh,560px)] bg-[#FBF6F0]/95 backdrop-blur-2xl rounded-[24px] border border-[#E7DDD2] shadow-[0_16px_44px_rgba(63,42,29,0.14)] flex flex-col overflow-hidden pointer-events-auto select-none ${className}`}
+            className={`absolute left-[calc(100%+14px)] top-0 z-[100] w-[264px] max-h-[min(82vh,560px)] bg-[#FBF6F0]/95 backdrop-blur-2xl rounded-[24px] border border-[#E7DDD2] shadow-[0_16px_44px_rgba(63,42,29,0.14)] flex flex-col overflow-hidden pointer-events-auto select-none ${className}`}
           >
             <nav className="flex-1 overflow-y-auto px-3 py-3.5 space-y-1 custom-scrollbar">
               {/* 1. Whiteboard Core */}
@@ -94,7 +94,7 @@ export const BoardMenuPopup: React.FC<BoardMenuPopupProps> = ({ className = '' }
                 }}
               />
 
-              {/* 2. AI Assistant */}
+              {/* 2. AI Assistant with inline full size popup button */}
               <SidebarItem
                 icon={Sparkles}
                 label="AI Assistant"
@@ -104,18 +104,28 @@ export const BoardMenuPopup: React.FC<BoardMenuPopupProps> = ({ className = '' }
                   setAiModalOpen(false);
                   closeMenu();
                 }}
-              />
-
-              {/* 3. AI Chat (Popup) */}
-              <SidebarItem
-                icon={Maximize2}
-                label="AI Chat (Popup)"
-                active={isAiModalOpen}
-                onClick={() => {
-                  setAiModalOpen(true);
-                  if (isAiDrawerOpen) toggleAiDrawer();
-                  closeMenu();
-                }}
+                trailing={
+                  <button
+                    type="button"
+                    title="Open full size AI chat popup"
+                    aria-label="Open full size AI chat popup"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setAiModalOpen(true);
+                      if (isAiDrawerOpen) toggleAiDrawer();
+                      closeMenu();
+                    }}
+                    className={`rounded-full p-1 transition-colors cursor-pointer ml-1 ${
+                      isAiModalOpen
+                        ? 'bg-[#FBF6F0] text-[#6B4423]'
+                        : isAiDrawerOpen
+                          ? 'text-[#FBF6F0]/80 hover:text-[#FBF6F0] hover:bg-white/20'
+                          : 'text-[#6B4423]/70 hover:text-[#3F2A1D] hover:bg-[#E7DDD2]'
+                    }`}
+                  >
+                    <Maximize2 size={15} />
+                  </button>
+                }
               />
 
               {/* 4. History */}

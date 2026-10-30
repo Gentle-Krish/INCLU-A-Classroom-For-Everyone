@@ -41,7 +41,7 @@ export const AssistiveDock: React.FC = () => {
       zIndex: 10
     });
     window.dispatchEvent(new CustomEvent('addCanvasPlaceholder', {
-      detail: { id, x: 960, y: 540, width: 340, height: 460 }
+      detail: { id, x: 960, y: 540, width: 340, height: 460, autofocus: true }
     }));
     toast.success('5-minute timer is on the board.');
   };
@@ -63,7 +63,7 @@ export const AssistiveDock: React.FC = () => {
       zIndex: 10
     });
     window.dispatchEvent(new CustomEvent('addCanvasPlaceholder', {
-      detail: { id, x: 960, y: 540, width: 440, height: 480 }
+      detail: { id, x: 960, y: 540, width: 440, height: 480, autofocus: true }
     }));
     toast.success('Random student wheel is on the board.');
   };

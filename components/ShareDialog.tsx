@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Copy, CheckCircle2, QrCode, Wifi, Users } from 'lucide-react';
+import { X, Copy, CheckCircle2, QrCode, Wifi, Users, RefreshCw, Eye, EyeOff } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useStore } from '../store';
 import { toast } from '../utils/toast';
-import { buildJoinQrValue, isPrivateIpv4, joinedCount } from '../utils/classRoom';
+import { buildJoinQrValue, isPrivateIpv4, joinedCount, generateClassNumber } from '../utils/classRoom';
 
 interface ShareDialogProps {
   isOpen: boolean;
   onClose: () => void;
   roomId: string;
+  onRefreshRoomId?: (newRoomId: string) => void;
   onStartClass: (roomId: string) => void;
 }
 
@@ -19,13 +20,22 @@ interface NetworkInfo {
   port: number;
   primaryUrl: string;
   hostname: string;
+  wifiSsid?: string;
 }
 
-export const ShareDialog: React.FC<ShareDialogProps> = ({ isOpen, onClose, roomId, onStartClass }) => {
+export const ShareDialog: React.FC<ShareDialogProps> = ({
+  isOpen,
+  onClose,
+  roomId,
+  onRefreshRoomId,
+  onStartClass,
+}) => {
   const roster = useStore((state) => state.classRoster);
   const connected = joinedCount(roster);
   const [copiedLink, setCopiedLink] = useState(false);
   const [networkInfo, setNetworkInfo] = useState<NetworkInfo | null>(null);
+  const [showAddress, setShowAddress] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -41,6 +51,16 @@ export const ShareDialog: React.FC<ShareDialogProps> = ({ isOpen, onClose, roomI
   const joinQr = networkInfo && laptopPort && isPrivateIpv4(laptopHost) && /^\d{4}$/.test(roomId)
     ? buildJoinQrValue(laptopHost, laptopPort, roomId)
     : '';
+
+  const handleRefreshCode = () => {
+    setIsRefreshing(true);
+    const newCode = generateClassNumber();
+    if (onRefreshRoomId) {
+      onRefreshRoomId(newCode);
+    }
+    toast.success(`Generated new class code: ${newCode}`);
+    setTimeout(() => setIsRefreshing(false), 500);
+  };
 
   const handleCopyLink = () => {
     const value = joinQr || (laptopAddress ? `Inclu class ${roomId} · ${laptopAddress}` : `Inclu class ${roomId}`);
@@ -124,21 +144,72 @@ export const ShareDialog: React.FC<ShareDialogProps> = ({ isOpen, onClose, roomI
 
               <div className="flex min-w-0 flex-col gap-3">
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-[22px] border border-[#E7DDD2] bg-[#F7F0E8] px-4 py-3">
-                    <div className="text-[10px] font-bold tracking-[0.16em] text-[#8A7568]">CLASS NUMBER</div>
+                  <div className="rounded-[22px] border border-[#E7DDD2] bg-[#F7F0E8] px-4 py-3 flex flex-col justify-between">
+                    <div className="flex items-center justify-between">
+                      <div className="text-[10px] font-bold tracking-[0.16em] text-[#8A7568]">CLASS NUMBER</div>
+                      {onRefreshRoomId && (
+                        <button
+                          type="button"
+                          onClick={handleRefreshCode}
+                          className="flex items-center gap-1 rounded-full px-2 py-1 bg-white hover:bg-[#FFF9F4] text-[#6B4423] text-[11px] font-bold border border-[#E7DDD2] transition-all hover:scale-105 active:scale-95 cursor-pointer shadow-xs"
+                          title="Generate new class code"
+                        >
+                          <RefreshCw size={11} className={isRefreshing ? 'animate-spin' : ''} />
+                          <span>Refresh</span>
+                        </button>
+                      )}
+                    </div>
                     <div className="mt-1 text-6xl font-black leading-none tracking-tight text-[#3F2A1D] tabular-nums">
                       {roomId}
                     </div>
-                    <p className="mt-2 text-xs text-[#8A7568]">Enter code on tablet</p>
+                    <p className="mt-2 text-xs text-[#8A7568]">Enter code on tablet or phone</p>
                   </div>
-                  <div className="rounded-[22px] border border-[#E7DDD2] bg-[#F7F0E8] px-4 py-3">
-                    <div className="text-[10px] font-bold tracking-[0.16em] text-[#8A7568]">LAPTOP ADDRESS</div>
-                    <div className="mt-3 inline-flex max-w-full rounded-xl bg-white px-3 py-1.5 text-base font-black text-[#3F2A1D] tabular-nums">
-                      <span className="truncate">{laptopAddress || '…'}</span>
+
+                  <div className="rounded-[22px] border border-[#E7DDD2] bg-[#F7F0E8] px-4 py-3 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between text-[10px] font-bold tracking-[0.16em] text-[#8A7568]">
+                        <span>CONNECTED WI-FI</span>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#1F7A45]">
+                          <span className="h-1.5 w-1.5 rounded-full bg-[#22A06B]" />
+                          Active
+                        </span>
+                      </div>
+                      <div className="mt-2 flex items-center gap-2.5">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#E5F6EA] text-[#1F7A45]">
+                          <Wifi size={18} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="truncate text-base sm:text-lg font-black text-[#3F2A1D]" title={networkInfo?.wifiSsid || 'Local Wi-Fi'}>
+                            {networkInfo?.wifiSsid || 'Local Wi-Fi Network'}
+                          </div>
+                          <p className="text-[11px] font-medium text-[#8A7568] -mt-0.5">Students must be on this Wi-Fi</p>
+                        </div>
+                      </div>
                     </div>
-                    <p className="mt-3 inline-flex items-center gap-1 text-xs text-[#8A7568]">
-                      <Wifi size={12} /> Local Wi-Fi network
-                    </p>
+
+                    <div className="mt-3 pt-2.5 border-t border-[#E7DDD2]/80 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 min-w-0 text-[11px] font-medium text-[#8A7568]">
+                        <span className="font-semibold text-[#6B4423]">Host:</span>
+                        {showAddress ? (
+                          <span className="font-mono text-xs font-bold text-[#3F2A1D] tabular-nums select-all">
+                            {laptopAddress || '127.0.0.1:3000'}
+                          </span>
+                        ) : (
+                          <span className="font-mono tracking-widest text-[#B5A599] select-none text-xs">
+                            •••••••••••••••
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddress(!showAddress)}
+                        className="p-1 rounded-md text-[#8A7568] hover:text-[#3F2A1D] hover:bg-white/80 transition-colors cursor-pointer"
+                        title={showAddress ? 'Censor laptop address' : 'Reveal laptop address'}
+                        aria-label={showAddress ? 'Censor laptop address' : 'Reveal laptop address'}
+                      >
+                        {showAddress ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
                   </div>
                 </div>
 

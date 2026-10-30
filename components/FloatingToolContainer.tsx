@@ -1,6 +1,6 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { X, GripVertical, Maximize2, Minimize2 } from 'lucide-react';
+import { motion, AnimatePresence, useDragControls } from 'motion/react';
+import { X } from 'lucide-react';
 
 interface FloatingToolContainerProps {
   title: string;
@@ -19,21 +19,35 @@ export const FloatingToolContainer: React.FC<FloatingToolContainerProps> = ({
   width = 340,
   height = 500
 }) => {
-  const safeLeft = typeof window !== 'undefined' ? Math.min(Math.max(16, defaultPosition.x), Math.max(16, window.innerWidth - width - 20)) : defaultPosition.x;
-  const safeTop = typeof window !== 'undefined' ? Math.min(Math.max(60, defaultPosition.y), Math.max(60, window.innerHeight - height - 20)) : defaultPosition.y;
+  const dragControls = useDragControls();
+
+  const safeLeft = typeof window !== 'undefined' 
+    ? Math.min(Math.max(16, defaultPosition.x), Math.max(16, window.innerWidth - width - 20)) 
+    : defaultPosition.x;
+  const safeTop = typeof window !== 'undefined' 
+    ? Math.min(Math.max(60, defaultPosition.y), Math.max(60, window.innerHeight - height - 20)) 
+    : defaultPosition.y;
+
+  // Relative drag constraints so user can drag anywhere across the screen
+  const minLeft = typeof window !== 'undefined' ? -safeLeft + 8 : -3000;
+  const minTop = typeof window !== 'undefined' ? -safeTop + 8 : -3000;
+  const maxRight = typeof window !== 'undefined' ? Math.max(100, window.innerWidth - safeLeft - 60) : 3000;
+  const maxBottom = typeof window !== 'undefined' ? Math.max(100, window.innerHeight - safeTop - 60) : 3000;
 
   return (
     <AnimatePresence>
       {isOpen && (
         <motion.div
           drag
+          dragControls={dragControls}
+          dragListener={false}
           dragMomentum={false}
-          dragElastic={0}
+          dragElastic={0.05}
           dragConstraints={{ 
-            left: 10, 
-            top: 50, 
-            right: typeof window !== 'undefined' ? Math.max(50, window.innerWidth - width - 20) : 1000, 
-            bottom: typeof window !== 'undefined' ? Math.max(50, window.innerHeight - height - 20) : 1000 
+            left: minLeft, 
+            top: minTop, 
+            right: maxRight, 
+            bottom: maxBottom 
           }}
           initial={{ opacity: 0, scale: 0.92, y: 14 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -46,10 +60,13 @@ export const FloatingToolContainer: React.FC<FloatingToolContainerProps> = ({
             top: safeTop,
             left: safeLeft,
           }}
-          className="fixed z-[60] bg-[#FFF6EE] rounded-[2rem] shadow-[0_20px_60px_rgba(63,42,29,0.12)] border-2 border-[#6B4423]/15 overflow-hidden flex flex-col pointer-events-auto"
+          className="fixed z-40 bg-[#FFF6EE] rounded-[2rem] shadow-[0_20px_60px_rgba(63,42,29,0.12)] border-2 border-[#6B4423]/15 overflow-hidden flex flex-col pointer-events-auto"
         >
           {/* Header */}
-          <div className="h-12 bg-[#F6F0E8] backdrop-blur-md border-b border-[#E7DDD2] flex items-center justify-between px-4 cursor-grab active:cursor-grabbing shrink-0 select-none">
+          <div 
+            onPointerDown={(e) => dragControls.start(e)}
+            className="h-12 bg-[#F6F0E8] backdrop-blur-md border-b border-[#E7DDD2] flex items-center justify-between px-4 cursor-grab active:cursor-grabbing shrink-0 select-none touch-none"
+          >
              <div className="flex items-center gap-2.5">
                 <div className="w-7 h-7 rounded-full bg-[#6B4423] flex items-center justify-center text-white shadow-xs">
                    <Icon size={14} />
@@ -58,6 +75,7 @@ export const FloatingToolContainer: React.FC<FloatingToolContainerProps> = ({
              </div>
              <div className="flex items-center gap-1">
                 <button 
+                  onPointerDown={(e) => e.stopPropagation()}
                   onClick={onClose}
                   className="w-7 h-7 flex items-center justify-center text-[#A08B7A] hover:text-rose-600 hover:bg-rose-50 rounded-full transition-colors cursor-pointer"
                   title="Close"

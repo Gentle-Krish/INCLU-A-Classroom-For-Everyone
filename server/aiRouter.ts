@@ -322,7 +322,9 @@ aiRouter.post("/pull-model", async (req, res) => {
 
   let modelfile = '';
   try {
-    modelfile = fs.readFileSync(path.join(process.cwd(), 'scripts', 'Modelfile.chalk-gemma'), 'utf8');
+    const incluModelfile = path.join(process.cwd(), 'scripts', 'Modelfile.inclu-gemma');
+    const chalkModelfile = path.join(process.cwd(), 'scripts', 'Modelfile.chalk-gemma');
+    modelfile = fs.existsSync(incluModelfile) ? fs.readFileSync(incluModelfile, 'utf8') : fs.readFileSync(chalkModelfile, 'utf8');
   } catch {
     return res.status(500).json({
       success: false,

@@ -427,8 +427,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ canvasRef }) => {
       return;
     }
 
-    const isWebSpeech = transcribeMode === 'webspeech';
-
     if (isListening) {
       if (autoStopTimerRef.current) {
         clearTimeout(autoStopTimerRef.current);
@@ -438,12 +436,20 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ canvasRef }) => {
       sounds.play('mic_off');
       stopVisualizer();
 
-      if (isWebSpeech) {
+      try {
         recognitionRef.current?.stop();
-        // Wait up to 600ms for final SpeechRecognition results to flush
-        await new Promise(r => setTimeout(r, 600));
+      } catch {}
+
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        setIsTranscribing(true);
+        try {
+          mediaRecorderRef.current.stop();
+        } catch {
+          setIsTranscribing(false);
+        }
+      } else {
         const finalLocalTranscript = transcriptBufferRef.current.trim() || interimBufferRef.current.trim();
-        if (finalLocalTranscript || useStore.getState().attachedDocument || useStore.getState().lastUploadedImage) {
+        if (finalLocalTranscript) {
           if (voiceConfig.autoSubmit) {
             handleSubmitInternal(finalLocalTranscript);
           } else {
@@ -455,24 +461,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ canvasRef }) => {
         }
         transcriptBufferRef.current = '';
         interimBufferRef.current = '';
-        if (voiceConfig.autoSubmit) setInput('');
-        setInterimInput('');
-        if (voiceConfig.autoSubmit) useStore.getState().setChatInputText('');
-        useStore.getState().setInterimInputText('');
-      } else {
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-          setIsTranscribing(true);
-          mediaRecorderRef.current.stop();
-        }
       }
     } else {
-      if (isWebSpeech && !speechSupported) {
-        const fallbackMessage = t('voiceUnsupported', 'This browser does not support local speech recognition (Web Speech API). Please use the text field.');
-        setVoiceNotice(fallbackMessage);
-        if (!useStore.getState().isAiDrawerOpen && !useStore.getState().isAiModalOpen) useStore.getState().toggleAiDrawer();
-        return;
-      }
-
       if (!navigator.mediaDevices?.getUserMedia) {
         setVoiceNotice("This browser does not support microphone access.");
         return;
@@ -499,142 +489,193 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ canvasRef }) => {
 
         startVisualizer(stream);
 
-        if (isWebSpeech) {
-          if (recognitionRef.current) {
-            const targetLang = voiceConfig?.language || 'en-US';
-            recognitionRef.current.lang = targetLang;
-            try { recognitionRef.current.stop(); } catch(e) {}
+        // 1. Fresh SpeechRecognition session for live continuous streaming
+        const SpeechRecognitionClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (SpeechRecognitionClass) {
+          try {
+            const rec = new SpeechRecognitionClass();
+            rec.continuous = true;
+            rec.interimResults = true;
+            rec.lang = voiceConfig?.language || 'en-US';
 
-            setTimeout(() => {
-              try {
-                recognitionRef.current.start();
-              } catch(e) {
-                setIsListening(false);
-                stopVisualizer();
+            rec.onresult = (event: any) => {
+              let finalTranscript = '';
+              let interimTranscript = '';
+              for (let i = event.resultIndex; i < event.results.length; ++i) {
+                const result = event.results[i];
+                if (result.isFinal) finalTranscript += result[0].transcript;
+                else interimTranscript += result[0].transcript;
               }
-            }, 100);
-          }
-        } else {
-          chunksRef.current = [];
-          let options = {};
-          if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-            options = { mimeType: 'audio/webm;codecs=opus' };
-          } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-            options = { mimeType: 'audio/webm' };
-          } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
-            options = { mimeType: 'audio/ogg;codecs=opus' };
-          } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-            options = { mimeType: 'audio/mp4' };
-          }
-
-          const mediaRecorder = new MediaRecorder(stream, options);
-          mediaRecorderRef.current = mediaRecorder;
-
-          mediaRecorder.ondataavailable = (e) => {
-            if (e.data && e.data.size > 0) {
-              chunksRef.current.push(e.data);
-            }
-          };
-
-          mediaRecorder.onstop = async () => {
-            if (transcribeInFlightRef.current) return;
-            transcribeInFlightRef.current = true;
-            const blobType = mediaRecorder.mimeType || 'audio/webm';
-            const audioBlob = new Blob(chunksRef.current, { type: blobType });
-            
-            if (audioStreamRef.current) {
-              audioStreamRef.current.getTracks().forEach(track => track.stop());
-              audioStreamRef.current = null;
-            }
-
-            const reader = new FileReader();
-            reader.onloadend = async () => {
-              const storeState = useStore.getState() as any;
-              if (typeof reader.result !== 'string' || !reader.result) {
-                transcribeInFlightRef.current = false;
-                setIsTranscribing(false);
-                setVoiceNotice(null);
-                showSpeechFailureToast("Couldn't transcribe speech: Could not read the recording.");
-                return;
-              }
-              try {
-                const base64 = reader.result.split(',')[1];
-                const aiPreference = storeState.aiPreference || 'auto';
-                const savedKey = typeof storeState.geminiApiKey === 'string' ? storeState.geminiApiKey.trim() : '';
-                const geminiApiKey = savedKey || undefined;
-                const ollamaBaseUrl = storeState.ollamaBaseUrl || undefined;
-
-                const response = await fetch('/api/ai/transcribe', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ 
-                    base64Audio: base64,
-                    aiPreference,
-                    geminiApiKey,
-                    ollamaBaseUrl,
-                    selectedVertexModel: storeState.selectedVertexModel,
-                    selectedGeminiModel: storeState.selectedGeminiModel,
-                    selectedOllamaModel: storeState.selectedOllamaModel,
-                    language: storeState.voiceConfig?.language || 'en-US',
-                    transcribeMode: storeState.transcribeMode
-                  })
-                });
-
-                if (!response.ok) {
-                  let payload: any = null;
-                  try { payload = await response.json(); } catch { /* status text is enough */ }
-                  const code = String(payload?.code || '');
-                  const detail = String(payload?.error || '');
-                  if (isSpeechBusyFailure(response.status, code, `${detail} ${response.statusText}`)) {
-                    const busy: any = new Error(detail || SPEECH_TYPE_MESSAGE);
-                    busy.speechBusy = true;
-                    throw busy;
-                  }
-                  throw new Error(`Couldn't transcribe speech: ${detail || response.statusText || 'Transcription failed'}`);
-                }
-
-                const data = await response.json();
-                if (data.text && data.text.trim()) {
-                  if (voiceConfig.autoSubmit) {
-                    handleSubmitInternal(data.text.trim());
-                  } else {
-                    setInput(data.text.trim());
-                    useStore.getState().setChatInputText(data.text.trim());
-                    if (!useStore.getState().isAiDrawerOpen && !useStore.getState().isAiModalOpen) useStore.getState().toggleAiDrawer();
-                    toast.info('The transcript was placed in the input field.');
-                  }
-                }
-              } catch (err: any) {
-                console.error("Transcription error:", err);
-                const isOfflineOllama = storeState.aiPreference === 'ollama' || (typeof navigator !== 'undefined' && !navigator.onLine);
-                if (storeState.transcribeMode === 'faster_whisper') {
-                  useStore.getState().setTranscribeMode('webspeech');
-                }
-                const message = err?.speechBusy
-                  ? (err.message || SPEECH_TYPE_MESSAGE)
-                  : isOfflineOllama
-                    ? 'Switched to browser speech recognition (Web Speech). Please click the mic again to speak!'
-                    : (String(err?.message || '').startsWith("Couldn't transcribe speech:")
-                        ? err.message
-                        : `Couldn't transcribe speech: ${err?.message || String(err)}`);
-                setVoiceNotice(null);
-                showSpeechFailureToast(message);
-              } finally {
-                transcribeInFlightRef.current = false;
-                setIsTranscribing(false);
+              if (finalTranscript.trim()) {
+                const updated = (transcriptBufferRef.current ? transcriptBufferRef.current + ' ' : '') + finalTranscript.trim();
+                transcriptBufferRef.current = updated;
+                setInput(updated);
+                useStore.getState().setChatInputText(updated);
+                interimBufferRef.current = '';
+                setInterimInput('');
+                useStore.getState().setInterimInputText('');
+              } else if (interimTranscript) {
+                interimBufferRef.current = interimTranscript;
+                setInterimInput(interimTranscript);
+                useStore.getState().setInterimInputText(interimTranscript);
               }
             };
-            reader.readAsDataURL(audioBlob);
-          };
 
-          // Continuous recording: records uninterrupted until teacher explicitly clicks stop button
-          mediaRecorder.start(transcribeMode === 'gemini_live' ? 3000 : undefined);
+            rec.onerror = (event: any) => {
+              console.warn("SpeechRecognition notice:", event.error);
+            };
 
-          // Clear any dangling auto-stop timer to prevent accidental cutoffs
-          if (autoStopTimerRef.current) {
-            clearTimeout(autoStopTimerRef.current);
-            autoStopTimerRef.current = null;
+            rec.onend = () => {
+              if (isListeningRef.current) {
+                try { rec.start(); } catch {}
+              }
+            };
+
+            rec.start();
+            recognitionRef.current = rec;
+          } catch (e) {
+            console.warn("Could not start SpeechRecognition:", e);
           }
+        }
+
+        // 2. Always record audio chunks in parallel for fail-safe fallback
+        chunksRef.current = [];
+        let options = {};
+        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+          options = { mimeType: 'audio/webm;codecs=opus' };
+        } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+          options = { mimeType: 'audio/webm' };
+        } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
+          options = { mimeType: 'audio/ogg;codecs=opus' };
+        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+          options = { mimeType: 'audio/mp4' };
+        }
+
+        const mediaRecorder = new MediaRecorder(stream, options);
+        mediaRecorderRef.current = mediaRecorder;
+
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            chunksRef.current.push(e.data);
+          }
+        };
+
+        mediaRecorder.onstop = async () => {
+          if (transcribeInFlightRef.current) return;
+          transcribeInFlightRef.current = true;
+          setIsTranscribing(true);
+
+          if (audioStreamRef.current) {
+            audioStreamRef.current.getTracks().forEach(track => track.stop());
+            audioStreamRef.current = null;
+          }
+
+          // A. Check if Web Speech API already captured the text cleanly
+          await new Promise(r => setTimeout(r, 250));
+          const liveTranscript = transcriptBufferRef.current.trim() || interimBufferRef.current.trim();
+          if (liveTranscript) {
+            transcribeInFlightRef.current = false;
+            setIsTranscribing(false);
+            setVoiceNotice(null);
+            if (voiceConfig.autoSubmit) {
+              handleSubmitInternal(liveTranscript);
+            } else {
+              setInput(liveTranscript);
+              useStore.getState().setChatInputText(liveTranscript);
+              if (!useStore.getState().isAiDrawerOpen && !useStore.getState().isAiModalOpen) useStore.getState().toggleAiDrawer();
+              toast.info('The voice result was placed in the input field.');
+            }
+            transcriptBufferRef.current = '';
+            interimBufferRef.current = '';
+            return;
+          }
+
+          // B. Fallback to server audio transcription
+          const blobType = mediaRecorder.mimeType || 'audio/webm';
+          const audioBlob = new Blob(chunksRef.current, { type: blobType });
+
+          if (audioBlob.size < 400) {
+            transcribeInFlightRef.current = false;
+            setIsTranscribing(false);
+            setVoiceNotice('No audio was captured. Please try speaking again.');
+            return;
+          }
+
+          const reader = new FileReader();
+          reader.onloadend = async () => {
+            const storeState = useStore.getState() as any;
+            if (typeof reader.result !== 'string' || !reader.result) {
+              transcribeInFlightRef.current = false;
+              setIsTranscribing(false);
+              setVoiceNotice('Could not read the audio recording.');
+              return;
+            }
+
+            try {
+              setVoiceNotice('Transcribing audio...');
+              const base64 = reader.result.split(',')[1];
+              const aiPreference = storeState.aiPreference || 'auto';
+              const savedKey = typeof storeState.geminiApiKey === 'string' ? storeState.geminiApiKey.trim() : '';
+              const geminiApiKey = savedKey || undefined;
+              const ollamaBaseUrl = storeState.ollamaBaseUrl || undefined;
+
+              const response = await fetch('/api/ai/transcribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                  base64Audio: base64,
+                  aiPreference,
+                  geminiApiKey,
+                  ollamaBaseUrl,
+                  selectedVertexModel: storeState.selectedVertexModel,
+                  selectedGeminiModel: storeState.selectedGeminiModel,
+                  selectedOllamaModel: storeState.selectedOllamaModel,
+                  language: storeState.voiceConfig?.language || 'en-US',
+                  transcribeMode: storeState.transcribeMode
+                })
+              });
+
+              if (!response.ok) {
+                let payload: any = null;
+                try { payload = await response.json(); } catch {}
+                const detail = String(payload?.error || response.statusText || 'Transcription failed');
+                throw new Error(detail);
+              }
+
+              const data = await response.json();
+              const transcribedText = (data.text || '').trim();
+              if (transcribedText) {
+                setVoiceNotice(null);
+                if (voiceConfig.autoSubmit) {
+                  handleSubmitInternal(transcribedText);
+                } else {
+                  setInput(transcribedText);
+                  useStore.getState().setChatInputText(transcribedText);
+                  if (!useStore.getState().isAiDrawerOpen && !useStore.getState().isAiModalOpen) useStore.getState().toggleAiDrawer();
+                  toast.info('The transcript was placed in the input field.');
+                }
+              } else {
+                setVoiceNotice('No speech was detected. Please try speaking again.');
+              }
+            } catch (err: any) {
+              console.error("Transcription error:", err);
+              setVoiceNotice(`Could not transcribe: ${err?.message || 'Please try again.'}`);
+              toast.warning(`Speech transcription: ${err?.message || 'Please try again'}`);
+            } finally {
+              transcribeInFlightRef.current = false;
+              setIsTranscribing(false);
+              transcriptBufferRef.current = '';
+              interimBufferRef.current = '';
+            }
+          };
+          reader.readAsDataURL(audioBlob);
+        };
+
+        mediaRecorder.start(250);
+
+        if (autoStopTimerRef.current) {
+          clearTimeout(autoStopTimerRef.current);
+          autoStopTimerRef.current = null;
         }
       } catch (err) {
         setMicPermission('denied');
