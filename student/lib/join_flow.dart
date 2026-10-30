@@ -377,7 +377,7 @@ class _JoinFlowState extends State<JoinFlow> {
     final target = parseChalkJoin(raw);
     if (target == null || !target.hasEndpoint) {
       _fail(
-        title: 'That code is not a Chalk class.',
+        title: 'That code is not an Inclu class.',
         detail: 'Point the camera at the code on the board.',
         speak: false,
       );

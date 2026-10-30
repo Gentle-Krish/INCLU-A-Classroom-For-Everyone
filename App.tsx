@@ -332,12 +332,11 @@ const App: React.FC = () => {
                 className={`flex items-center gap-2.5 ${isWeb ? 'cursor-pointer' : ''}`}
                 title={isWeb ? 'Back to home' : 'Inclu: A Classroom for Everyone'}
               >
-                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#F6D7A8] border border-[#E7DDD2]">
-                  <span className="flex gap-1.5" aria-hidden>
-                    <span className="h-1.5 w-1.5 rounded-full bg-[#3F2A1D]" />
-                    <span className="h-1.5 w-1.5 rounded-full bg-[#3F2A1D]" />
-                  </span>
-                </span>
+                <img
+                  src="/icon.png"
+                  alt="Inclu"
+                  className="h-10 w-10 rounded-xl border border-[#E7DDD2] shadow-xs object-contain bg-[#FFF6EE] p-0.5"
+                />
                 <span className="leading-none">
                   <span className="block text-[22px] font-black tracking-tight text-[#3F2A1D]">Inclu</span>
                   <span className="mt-1 block text-[10px] font-bold tracking-[0.16em] text-[#A08B7A]">CLASSROOM FOR EVERYONE</span>

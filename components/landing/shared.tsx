@@ -17,25 +17,14 @@ export function useMedia(query: string) {
 export function Logo({ className, light, clay }: { className?: string; light?: boolean; clay?: boolean }) {
   return (
     <span className={cn("inline-flex items-center gap-2", className)}>
+      <img
+        src="/icon.png"
+        alt="Inclu"
+        className="h-8 w-8 rounded-lg object-contain border border-[#E7DDD2] bg-white p-0.5"
+      />
       <span
-        className={cn(
-          "grid h-8 w-8 place-items-center rounded-[10px]",
-          clay ? "bg-[#F4B183]" : light ? "bg-white" : "bg-chalk"
-        )}
-      >
-        <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none">
-          <path
-            d="M7 4.5v15l4.2-4.1 2.9 5.1 2.4-1.3-2.9-5H19L7 4.5Z"
-            fill={clay ? "#3F2A1D" : light ? "#1550AA" : "#fff"}
-            stroke={clay ? "#3F2A1D" : light ? "#1550AA" : "#fff"}
-            strokeWidth="1.2"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </span>
-      <span
-        className={cn("display text-[1.55rem]", clay ? "text-[#3F2A1D]" : light ? "text-white" : "text-chalk")}
-        style={{ letterSpacing: "-0.06em" }}
+        className={cn("display text-[1.55rem] font-black", clay ? "text-[#3F2A1D]" : light ? "text-white" : "text-[#1A1A1A]")}
+        style={{ letterSpacing: "-0.04em" }}
       >
         Inclu
       </span>

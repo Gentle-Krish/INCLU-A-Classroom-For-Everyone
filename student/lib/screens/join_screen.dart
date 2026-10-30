@@ -66,7 +66,14 @@ class _JoinScreenState extends State<JoinScreen> {
         padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
         child: Column(
           children: [
-            const ClayBot(size: 132),
+            Image.asset(
+              'assets/logo.png',
+              height: 42,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+            ),
+            const SizedBox(height: 14),
+            const ClayBot(size: 118),
             const SizedBox(height: 12),
             const Text('Join the class', style: chalkTitle, textAlign: TextAlign.center),
             const SizedBox(height: 6),
