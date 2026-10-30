@@ -19,6 +19,7 @@ import { TodoListTool } from './TodoListTool';
 import { SpinWheelTool } from './SpinWheelTool';
 import { ScoreboardTool } from './ScoreboardTool';
 import { MathGraphTool } from './MathGraphTool';
+import { AutofocusReticle } from './AutofocusReticle';
 import {
   Printer, Maximize2, Minimize2, X, Download, FileText, Globe,
   Code, Compass, BookOpen, Clock, Calculator, HelpCircle, Layers, Sparkles, Users, SquareCheckBig,
@@ -166,7 +167,7 @@ export const DomOverlay: React.FC = () => {
     e.stopPropagation();
     e.preventDefault();
 
-    const title = el.config?.title || el.componentType || 'Chalk document';
+    const title = el.config?.title || el.componentType || 'Inclu document';
     const type = el.componentType || '';
 
     // Specialized print handlers
@@ -366,6 +367,7 @@ export const DomOverlay: React.FC = () => {
           transformOrigin: '0 0'
         }}
       >
+        <AutofocusReticle />
         {Object.values(domElements).map((el: DomElementState) => {
           if (fullscreenWidgetId === el.id) return null; // Rendered in fullscreen portal instead
 
@@ -445,7 +447,7 @@ export const DomOverlay: React.FC = () => {
               <div
                 id={`widget-${el.id}`}
                 data-board-scroll
-                className="flex-1 bg-[#FFF6EE] relative overflow-hidden"
+                className="flex-1 bg-[#FFF6EE] relative overflow-y-auto overflow-x-hidden custom-scrollbar flex flex-col"
                 style={{ pointerEvents: isHandMode ? 'none' : 'auto' }}
               >
                 {renderContent(el)}

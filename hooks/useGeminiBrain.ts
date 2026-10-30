@@ -9,7 +9,7 @@ import { layoutMindmap, expandMindmapNodes, findMatchingMindmapNode, NODE_STYLE_
 import { sanitizeMermaidCode, cleanMermaidNodeLabel } from '../utils/mermaidSanitizer';
 import { isQuestCommand } from '../utils/questSchema';
 import { algorithmLesson } from '../utils/algorithmTrace';
-import { equationLine, equationMarkdown, isNewPageRequest, penFontSize, penLine, writeTextIntent } from '../utils/boardIntent';
+import { equationLine, equationMarkdown, isNewPageRequest, penFontSize, penLine, writeTextIntent, isUnsupportedDrawingRequest } from '../utils/boardIntent';
 import { visiblePageFrame } from '../utils/boardScroll';
 import { STANDARD_FONT_SIZES, resolveFontSize } from '../constants';
 
@@ -149,6 +149,14 @@ export function evaluateJevSystemOne(
   const rawNorm = normalizeSpokenNumbers(prompt.toLowerCase().trim());
   const norm = stripConversationalPrefix(rawNorm);
 
+  if (isUnsupportedDrawingRequest(prompt)) {
+    return {
+      handled: true,
+      actionTaken: 'UNSUPPORTED_REQUEST',
+      message: 'Sorry, I currently cannot do that. As an AI whiteboard assistant, I can create educational diagrams, concept mindmaps, geometric shapes, math function graphs, notes, and write text on the whiteboard.',
+    };
+  }
+
   const traced = algorithmLesson(prompt);
   if (traced) {
     return {
@@ -199,36 +207,56 @@ export function evaluateJevSystemOne(
   }
 
   // 1. Instant Reflex Handlers (<15ms, zero LLM roundtrip)
-  const timerOpenMatch = norm.match(/^(buka|tampilkan|nyalakan|pasang|mulai|start|show|open|set)\s+(timer|penghitung waktu|stopwatch)(?:\s+(\d+)\s*(menit|mnt|min|minutes?|detik|sec|seconds?))?/i);
+  const timerOpenMatch =
+    norm.match(/(?:^|\b)(?:buka|tampilkan|nyalakan|pasang|mulai|start|show|open|set|create|make|add|buat|buatkan)?\s*(?:a\s+)?(?:quick\s+)?(timer|penghitung\s+waktu|stopwatch)\s*(?:for\s+|selama\s+)?(?:(\d+)\s*(menit|mnt|min|minutes?|detik|sec|seconds?|jam|hours?))?/i)
+    || norm.match(/(?:^|\b)(?:start|set|create|make|add|buka|pasang)?\s*(?:a\s+)?(\d+)\s*(menit|mnt|min|minutes?|detik|sec|seconds?|jam|hours?)\s+(timer|stopwatch)/i);
   if (timerOpenMatch) {
-    const amount = timerOpenMatch[3] ? parseInt(timerOpenMatch[3], 10) : null;
-    const unit = (timerOpenMatch[4] || 'menit').toLowerCase();
-    if (amount && amount > 0 && typeof storeState.updateDomElement === 'function') {
-      const seconds = unit.startsWith('det') || unit.startsWith('sec') ? amount : amount * 60;
+    let amount: number | null = null;
+    let unit = 'menit';
+    if (timerOpenMatch[1] && /^\d+$/.test(timerOpenMatch[1])) {
+      amount = parseInt(timerOpenMatch[1], 10);
+      unit = (timerOpenMatch[2] || 'menit').toLowerCase();
+    } else if (timerOpenMatch[2] && /^\d+$/.test(timerOpenMatch[2])) {
+      amount = parseInt(timerOpenMatch[2], 10);
+      unit = (timerOpenMatch[3] || 'menit').toLowerCase();
+    }
+    const seconds = unit.startsWith('det') || unit.startsWith('sec')
+      ? (amount || 300)
+      : (unit.startsWith('jam') || unit.startsWith('hour'))
+      ? (amount || 5) * 3600
+      : (amount || 5) * 60;
+
+    if (typeof storeState.updateDomElement === 'function') {
+      const vpt = canvas?.viewportTransform || [1, 0, 0, 1, 0, 0];
+      const zoom = canvas?.getZoom?.() || vpt[0] || 1;
+      const canvasW = canvas?.getWidth?.() ?? canvas?.width ?? 1920;
+      const canvasH = canvas?.getHeight?.() ?? canvas?.height ?? 1080;
       const existingTimers = Object.values(storeState.domElements || {}).filter((el: any) => el.componentType === 'TIMER') as any[];
-      if (existingTimers.length > 0) {
-        const lastTimer = existingTimers[existingTimers.length - 1];
-        storeState.updateDomElement(lastTimer.id, { config: { ...lastTimer.config, seconds, mode: 'TIMER' } });
-      } else {
-        const id = `timer_${Date.now()}`;
-        storeState.updateDomElement(id, {
-          id,
-          html: '<div>Timer</div>',
-          componentType: 'TIMER',
-          config: { seconds, mode: 'TIMER' },
-          x: 960,
-          y: 540,
-          width: 320,
-          height: 380,
-          scaleX: 1,
-          scaleY: 1,
-          rotation: 0,
-          zIndex: 15
-        });
-      }
+      const offset = existingTimers.length * 36;
+      const spawnX = Math.round((-vpt[4] + canvasW / 2) / zoom) + offset;
+      const spawnY = Math.round((-vpt[5] + canvasH / 2) / zoom) + offset;
+      const id = `timer_${Date.now()}`;
+      storeState.updateDomElement(id, {
+        id,
+        html: '<div>Timer</div>',
+        componentType: 'TIMER',
+        config: { seconds, mode: 'TIMER' },
+        x: spawnX,
+        y: spawnY,
+        width: 320,
+        height: 380,
+        scaleX: 1,
+        scaleY: 1,
+        rotation: 0,
+        zIndex: 15
+      });
+      window.dispatchEvent(new CustomEvent('addCanvasPlaceholder', {
+        detail: { id, x: spawnX, y: spawnY, width: 320, height: 380, autofocus: true }
+      }));
     }
     if (!storeState.isTimerOpen && typeof storeState.toggleTimer === 'function') storeState.toggleTimer();
-    return { handled: true, actionTaken: 'TOGGLE_TIMER', message: '⏱️ Timer opened.' };
+    const durationLabel = seconds >= 60 ? `${Math.round(seconds / 60)}m` : `${seconds}s`;
+    return { handled: true, actionTaken: 'TOGGLE_TIMER', message: `⏱️ ${durationLabel} timer created and focused.` };
   }
   if (/^(tutup|close|sembunyikan|hide)\s+(timer|stopwatch)/i.test(norm)) {
     if (storeState.isTimerOpen) storeState.toggleTimer();
@@ -601,14 +629,36 @@ export const useGeminiBrain = () => {
             detail: { id, x: frame.x, y: frame.y, width: frame.width, height: frame.height },
           }));
         }
-        if (jevResult.canvasText?.text) {
-          const vpt = canvas?.viewportTransform || [1, 0, 0, 1, 0, 0];
-          const zoom = canvas?.getZoom() || 1;
-          const canvasW = canvas?.width || 1920;
-          const canvasH = canvas?.height || 1080;
+        if (jevResult.canvasText?.text && canvas) {
+          const vpt = canvas.viewportTransform || [1, 0, 0, 1, 0, 0];
+          const zoom = canvas.getZoom() || 1;
+          const canvasW = canvas.width || 1920;
+          const canvasH = canvas.height || 1080;
           const centerX = Math.round((-vpt[4] + canvasW / 2) / zoom);
           const centerY = Math.round((-vpt[5] + canvasH / 2) / zoom);
           const resolvedSize = jevResult.canvasText.fontSize || STANDARD_FONT_SIZES.medium.whiteboardPx;
+          const fontFamily = jevResult.canvasText.fontFamily || storeState.fontFamily || 'Inter';
+          const textColor = storeState.theme === 'dark' ? '#FBF6F0' : '#1F2937';
+
+          // Instantly create and render text directly on canvas
+          const fabricGlobal = window.fabric || (window as any).fabric;
+          if (fabricGlobal) {
+            const textObj = new fabricGlobal.IText(jevResult.canvasText.text, {
+              left: centerX,
+              top: centerY,
+              fontFamily,
+              fontSize: resolvedSize,
+              fill: textColor,
+              originX: 'center',
+              originY: 'center',
+              id: `text_${Date.now()}`
+            });
+            canvas.add(textObj);
+            canvas.setActiveObject(textObj);
+            canvas.requestRenderAll();
+            canvas.fire('object:modified');
+          }
+
           addAction({
             id: `ink_${Date.now()}`,
             type: 'WRITE_TEXT',
@@ -617,10 +667,10 @@ export const useGeminiBrain = () => {
               x: centerX,
               y: centerY,
               fontSize: resolvedSize,
-              fontFamily: jevResult.canvasText.fontFamily || storeState.fontFamily || 'Inter',
-              color: storeState.theme === 'dark' ? '#FBF6F0' : '#1F2937',
+              fontFamily,
+              color: textColor,
             },
-            status: 'PENDING',
+            status: 'COMPLETED',
           });
         }
         sounds.play('pop');
@@ -939,16 +989,39 @@ ${jevDirective}
       const centerY = (tl.y + br.y) / 2;
       let lastWorldPos = { x: centerX, y: centerY };
 
-      const getGridPos = (gridPos?: string) => {
+      const getGridPos = (gridPos?: string, elemWidth = 400, elemHeight = 400) => {
         if (!gridPos) return lastWorldPos;
-        const vWidth = br.x - tl.x;
-        const vHeight = br.y - tl.y;
-        const gw = vWidth / 3, gh = vHeight / 3;
-        let pt = { x: tl.x + vWidth / 2, y: tl.y + vHeight / 2 };
-        if (gridPos.includes('TOP')) pt.y = tl.y + gh / 2;
-        if (gridPos.includes('BOTTOM')) pt.y = tl.y + vHeight - gh / 2;
-        if (gridPos.includes('LEFT')) pt.x = tl.x + gw / 2;
-        if (gridPos.includes('RIGHT')) pt.x = tl.x + vWidth - gw / 2;
+        const vWidth = Math.max(800, br.x - tl.x);
+        const vHeight = Math.max(600, br.y - tl.y);
+
+        const halfW = elemWidth / 2;
+        const halfH = elemHeight / 2;
+
+        // Safe margins to prevent widgets from clipping against UI toolbars & header
+        const minX = tl.x + halfW + 70;
+        const maxX = br.x - halfW - 70;
+        const minY = tl.y + halfH + 85;
+        const maxY = br.y - halfH - 95;
+
+        let targetX = tl.x + vWidth / 2;
+        let targetY = tl.y + vHeight / 2;
+
+        if (gridPos.includes('LEFT')) {
+          targetX = minX;
+        } else if (gridPos.includes('RIGHT')) {
+          targetX = maxX;
+        }
+
+        if (gridPos.includes('TOP')) {
+          targetY = minY;
+        } else if (gridPos.includes('BOTTOM')) {
+          targetY = maxY;
+        }
+
+        const clampedX = minX <= maxX ? Math.max(minX, Math.min(maxX, targetX)) : tl.x + vWidth / 2;
+        const clampedY = minY <= maxY ? Math.max(minY, Math.min(maxY, targetY)) : tl.y + vHeight / 2;
+
+        const pt = { x: Math.round(clampedX), y: Math.round(clampedY) };
         lastWorldPos = pt;
         return pt;
       };
@@ -1119,11 +1192,9 @@ ${jevDirective}
 
         } else if (call.name === 'add_component') {
           actionType = 'RENDER_HTML';
-          const pos = getGridPos(args.gridPosition);
-          let html = `<div>${args.componentType}</div>`;
+          let cType = args.componentType;
           let configObj: any = undefined;
           let pWidth = 450, pHeight = 400;
-          let cType = args.componentType;
 
           if (args.configJson) {
             try {
@@ -1142,40 +1213,45 @@ ${jevDirective}
           }
 
           if (cType === 'DOCUMENT_PAGE' || cType === 'MARKDOWN_NOTE') {
-            pWidth = 600; pHeight = 700;
+            pWidth = 620; pHeight = 680;
           } else if (cType === 'QUIZ_MULTIPLE_CHOICE') {
-            pWidth = 480; pHeight = 520;
+            pWidth = 500; pHeight = 540;
             if (configObj?.questions && Array.isArray(configObj.questions) && configObj.questions.length > 1) {
               cType = 'QUIZ_APP';
               pWidth = 540; pHeight = 620;
             }
           } else if (cType === 'QUIZ_TRUE_FALSE') {
-            pWidth = 440; pHeight = 380;
+            pWidth = 460; pHeight = 420;
           } else if (cType === 'QUIZ_APP') {
             pWidth = 540; pHeight = 620;
           } else if (cType === 'CALCULATOR') {
-            html = CALCULATOR_TEMPLATE; pWidth = 350; pHeight = 500;
+            pWidth = 340; pHeight = 500;
           } else if (cType === 'TIMER') {
-            html = TIMER_TEMPLATE(configObj?.seconds || 300); pWidth = 300; pHeight = 250;
+            pWidth = 340; pHeight = 460;
           } else if (cType === 'ATTENDANCE' || cType === 'PRESENSI') {
-            pWidth = 440; pHeight = 520;
+            pWidth = 460; pHeight = 540;
           } else if (cType === 'TODOLIST') {
-            pWidth = 380; pHeight = 480;
+            pWidth = 400; pHeight = 500;
+          } else if (cType === 'SPIN_WHEEL' || cType === 'RODA_ACAK') {
+            pWidth = 440; pHeight = 500;
           } else if (cType === 'MARKMAP_MINDMAP' || cType === 'MERMAID_DIAGRAM') {
-            pWidth = 680; pHeight = 540;
+            pWidth = 720; pHeight = 540;
           }
 
+          const pos = getGridPos(args.gridPosition, pWidth, pHeight);
+          let html = `<div>${cType}</div>`;
           payload = { html, x: pos.x, y: pos.y, width: pWidth, height: pHeight, componentType: cType, config: configObj };
 
         } else if (call.name === 'render_markmap') {
           actionType = 'RENDER_HTML';
-          const pos = getGridPos(args.gridPosition || 'CENTER');
+          const pWidth = 740, pHeight = 560;
+          const pos = getGridPos(args.gridPosition || 'CENTER', pWidth, pHeight);
           payload = {
             html: '<div>MARKMAP</div>',
             x: pos.x,
             y: pos.y,
-            width: 720,
-            height: 560,
+            width: pWidth,
+            height: pHeight,
             componentType: 'MARKMAP_MINDMAP',
             config: {
               title: args.title || 'Markmap Concept Map',
@@ -1185,14 +1261,15 @@ ${jevDirective}
 
         } else if (call.name === 'render_mermaid') {
           actionType = 'RENDER_HTML';
-          const pos = getGridPos(args.gridPosition || 'CENTER');
+          const pWidth = 740, pHeight = 560;
+          const pos = getGridPos(args.gridPosition || 'CENTER', pWidth, pHeight);
           const safeMermaidCode = sanitizeMermaidCode(args.code, args.title || 'Mermaid Diagram');
           payload = {
             html: '<div>MERMAID</div>',
             x: pos.x,
             y: pos.y,
-            width: 720,
-            height: 560,
+            width: pWidth,
+            height: pHeight,
             componentType: 'MERMAID_DIAGRAM',
             config: { title: args.title || 'Diagram Mermaid', code: safeMermaidCode }
           };

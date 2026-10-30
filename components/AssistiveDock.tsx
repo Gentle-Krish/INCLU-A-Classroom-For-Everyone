@@ -14,7 +14,8 @@ export const AssistiveDock: React.FC = () => {
     toggleAssistiveMode,
     toggleAttendance,
     setViewport,
-    updateDomElement
+    updateDomElement,
+    isAiDrawerOpen
   } = useStore();
 
   const { isAmbientActive, interimCaption, toggleAmbient } = useAmbientListener();
@@ -32,15 +33,15 @@ export const AssistiveDock: React.FC = () => {
       config: { seconds: 300, mode: 'TIMER' },
       x: 960,
       y: 540,
-      width: 320,
-      height: 380,
+      width: 340,
+      height: 460,
       scaleX: 1,
       scaleY: 1,
       rotation: 0,
       zIndex: 10
     });
     window.dispatchEvent(new CustomEvent('addCanvasPlaceholder', {
-      detail: { id, x: 960, y: 540, width: 320, height: 380 }
+      detail: { id, x: 960, y: 540, width: 340, height: 460 }
     }));
     toast.success('5-minute timer is on the board.');
   };
@@ -73,7 +74,11 @@ export const AssistiveDock: React.FC = () => {
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2 font-sans select-none pointer-events-auto">
+    <div
+      className={`fixed bottom-24 ${
+        isAiDrawerOpen ? 'lg:right-[404px] right-6' : 'right-6'
+      } z-50 flex flex-col items-end gap-2 font-sans select-none pointer-events-auto transition-[right] duration-300`}
+    >
       {/* Assistive Mode Indicator Badge */}
       <div className="flex items-center gap-2 px-3 py-1 bg-[#FFE08A] text-[#3F2A1D] rounded-full font-black text-[11px] shadow-lg shadow-[#3F2A1D]/10">
         <HeartHandshake size={14} />

@@ -160,9 +160,9 @@ export const TimerTool: React.FC<TimerToolProps> = ({ config }) => {
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#FFF6EE] font-sans overflow-hidden">
+    <div className="flex-1 flex flex-col h-full bg-[#FFF6EE] font-sans overflow-y-auto custom-scrollbar">
       {/* Tabs */}
-      <div className="flex border-b border-[#E7DDD2] bg-[#F6F0E8]/50">
+      <div className="flex border-b border-[#E7DDD2] bg-[#F6F0E8]/50 shrink-0">
         {(['CLOCK', 'TIMER', 'STOPWATCH', 'ALARM'] as Mode[]).map((m) => (
           <button
             key={m}
@@ -177,7 +177,7 @@ export const TimerTool: React.FC<TimerToolProps> = ({ config }) => {
       </div>
 
       {/* Main Display */}
-      <div className="flex-1 flex flex-col items-center justify-center p-6 bg-[#F6F0E8]/50">
+      <div className="flex-1 flex flex-col items-center justify-center p-3.5 bg-[#F6F0E8]/50">
         <AnimatePresence mode="wait">
           <motion.div
             key={mode}
@@ -200,7 +200,7 @@ export const TimerTool: React.FC<TimerToolProps> = ({ config }) => {
             {mode === 'TIMER' && (
               <div className="flex flex-col items-center">
                 {isVisualPie ? (
-                  <div className="relative w-44 h-44 flex items-center justify-center my-2">
+                  <div className="relative w-40 h-40 flex items-center justify-center my-1">
                     <svg className="w-full h-full -rotate-90" viewBox="0 0 160 160">
                       {/* Background Ring */}
                       <circle
@@ -288,7 +288,7 @@ export const TimerTool: React.FC<TimerToolProps> = ({ config }) => {
                   </button>
                 </div>
 
-                <div className="mt-5 flex gap-4">
+                <div className="mt-3 flex gap-4">
                   <button onClick={() => setIsActive(!isActive)} className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-all active:scale-90 ${isActive ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-500 hover:bg-emerald-600'} text-white`}>
                     {isActive ? <Pause size={20} /> : <Play size={20} className="ml-1" />}
                   </button>
