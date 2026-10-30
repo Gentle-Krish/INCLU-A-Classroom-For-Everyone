@@ -1,0 +1,8 @@
+# Environment variable management
+python-dotenv
+
+# HTTP requests and API communication
+requests
+
+# Local AI model integration with Ollama
+ollama
