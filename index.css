@@ -153,12 +153,15 @@
     visibility: hidden;
   }
 
+  body.printing-isolated .inclu-print-target,
+  body.printing-isolated .inclu-print-target *,
   body.printing-isolated .Chalk-print-target,
   body.printing-isolated .Chalk-print-target * {
     visibility: visible !important;
   }
 
   /* 3. Position the printable card at top of page with clean document styles */
+  body.printing-isolated .inclu-print-target,
   body.printing-isolated .Chalk-print-target {
     position: absolute !important;
     left: 0 !important;

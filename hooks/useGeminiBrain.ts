@@ -138,6 +138,7 @@ export function stripConversationalPrefix(input: string): string {
     .replace(/^(?:(?:hai|halo|hey|ok|oke|permisi|pak|bu)\s+)?(?:Chalk|Inclu)[,.!?\s]+(?:(?:tolong|coba|bisa|mohon|please|can\s+you|could\s+you|bantu(?:\s+saya)?)\s+)+/i, '')
     .replace(/^(?:hai|halo|hey|ok|oke)\s+(?:Chalk|Inclu)[,.!?\s]*/i, '')
     .replace(/^(?:Chalk|Inclu)[,.!?\s]+/i, '')
+    .replace(/^(?:tolong|coba|bisa|mohon|please|can\s+you|could\s+you|bantu(?:\s+saya)?)\s+/i, '')
     .trim();
 }
 
@@ -207,24 +208,16 @@ export function evaluateJevSystemOne(
   }
 
   // 1. Instant Reflex Handlers (<15ms, zero LLM roundtrip)
-  const timerOpenMatch =
-    norm.match(/(?:^|\b)(?:buka|tampilkan|nyalakan|pasang|mulai|start|show|open|set|create|make|add|buat|buatkan)?\s*(?:a\s+)?(?:quick\s+)?(timer|penghitung\s+waktu|stopwatch)\s*(?:for\s+|selama\s+)?(?:(\d+)\s*(menit|mnt|min|minutes?|detik|sec|seconds?|jam|hours?))?/i)
-    || norm.match(/(?:^|\b)(?:start|set|create|make|add|buka|pasang)?\s*(?:a\s+)?(\d+)\s*(menit|mnt|min|minutes?|detik|sec|seconds?|jam|hours?)\s+(timer|stopwatch)/i);
-  if (timerOpenMatch) {
-    let amount: number | null = null;
-    let unit = 'menit';
-    if (timerOpenMatch[1] && /^\d+$/.test(timerOpenMatch[1])) {
-      amount = parseInt(timerOpenMatch[1], 10);
-      unit = (timerOpenMatch[2] || 'menit').toLowerCase();
-    } else if (timerOpenMatch[2] && /^\d+$/.test(timerOpenMatch[2])) {
-      amount = parseInt(timerOpenMatch[2], 10);
-      unit = (timerOpenMatch[3] || 'menit').toLowerCase();
-    }
-    const seconds = unit.startsWith('det') || unit.startsWith('sec')
-      ? (amount || 300)
-      : (unit.startsWith('jam') || unit.startsWith('hour'))
-      ? (amount || 5) * 3600
-      : (amount || 5) * 60;
+  const timerMatchA = norm.match(/(?:start|set|create|make|add|put|buka|pasang)?\s*(?:a\s+)?(\d+)\s*(minutes?|mins?|m|seconds?|secs?|s|hours?|hrs?|h|menit|detik|jam)?\s*(?:timer|stopwatch)/i);
+  const timerMatchB = norm.match(/(?:start|set|create|make|add|put|buka|pasang)?\s*(?:a\s+)?(?:timer|stopwatch)\s*(?:for|selama)?\s*(\d+)?\s*(minutes?|mins?|m|seconds?|secs?|s|hours?|hrs?|h|menit|detik|jam)?/i);
+
+  if (timerMatchA || (timerMatchB && (timerMatchB[1] || norm.includes('timer')))) {
+    const num = timerMatchA ? parseInt(timerMatchA[1], 10) : (timerMatchB && timerMatchB[1] ? parseInt(timerMatchB[1], 10) : 5);
+    const rawUnit = timerMatchA ? timerMatchA[2] : (timerMatchB ? timerMatchB[2] : 'm');
+    const unit = (rawUnit || 'm').toLowerCase();
+    const isSeconds = unit.startsWith('s') || unit.startsWith('det');
+    const isHours = unit.startsWith('h') || unit.startsWith('jam');
+    const seconds = isSeconds ? num : isHours ? num * 3600 : num * 60;
 
     if (typeof storeState.updateDomElement === 'function') {
       const vpt = canvas?.viewportTransform || [1, 0, 0, 1, 0, 0];
@@ -233,30 +226,29 @@ export function evaluateJevSystemOne(
       const canvasH = canvas?.getHeight?.() ?? canvas?.height ?? 1080;
       const existingTimers = Object.values(storeState.domElements || {}).filter((el: any) => el.componentType === 'TIMER') as any[];
       const offset = existingTimers.length * 36;
-      const spawnX = Math.round((-vpt[4] + canvasW / 2) / zoom) + offset;
-      const spawnY = Math.round((-vpt[5] + canvasH / 2) / zoom) + offset;
+      const spawnX = Math.round((-vpt[4] + canvasW * 0.72) / zoom) + offset;
+      const spawnY = Math.round((-vpt[5] + canvasH * 0.32) / zoom) + offset;
       const id = `timer_${Date.now()}`;
       storeState.updateDomElement(id, {
         id,
         html: '<div>Timer</div>',
         componentType: 'TIMER',
-        config: { seconds, mode: 'TIMER' },
+        config: { seconds, mode: 'TIMER', isRunning: true, isVisualPie: true },
         x: spawnX,
         y: spawnY,
-        width: 320,
-        height: 380,
+        width: 340,
+        height: 460,
         scaleX: 1,
         scaleY: 1,
         rotation: 0,
         zIndex: 15
       });
       window.dispatchEvent(new CustomEvent('addCanvasPlaceholder', {
-        detail: { id, x: spawnX, y: spawnY, width: 320, height: 380, autofocus: true }
+        detail: { id, x: spawnX, y: spawnY, width: 340, height: 460, autofocus: true }
       }));
     }
-    if (!storeState.isTimerOpen && typeof storeState.toggleTimer === 'function') storeState.toggleTimer();
     const durationLabel = seconds >= 60 ? `${Math.round(seconds / 60)}m` : `${seconds}s`;
-    return { handled: true, actionTaken: 'TOGGLE_TIMER', message: `⏱️ ${durationLabel} timer created and focused.` };
+    return { handled: true, actionTaken: 'TOGGLE_TIMER', message: `⏱️ ${durationLabel} timer created on the whiteboard.` };
   }
   if (/^(tutup|close|sembunyikan|hide)\s+(timer|stopwatch)/i.test(norm)) {
     if (storeState.isTimerOpen) storeState.toggleTimer();

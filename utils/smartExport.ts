@@ -147,10 +147,12 @@ export function triggerPrintComponent(target: HTMLElement | string) {
   }
 
   document.body.classList.add('printing-isolated');
+  el.classList.add('inclu-print-target');
   el.classList.add('Chalk-print-target');
 
   const cleanup = () => {
     document.body.classList.remove('printing-isolated');
+    el.classList.remove('inclu-print-target');
     el.classList.remove('Chalk-print-target');
     window.removeEventListener('afterprint', cleanup);
   };

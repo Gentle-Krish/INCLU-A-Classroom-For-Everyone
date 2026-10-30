@@ -6,11 +6,14 @@ import {
   ChevronRight, Star, Diamond, Heart, MessageSquare,
   Minus, Circle, Triangle, Pentagon, Hexagon,
   Calculator, Clock, FileText, HelpCircle, Activity,
-  FlaskConical, Users, CheckSquare, Bold, Dices, Trophy, FunctionSquare
+  FlaskConical, Users, CheckSquare, Bold, Dices, Trophy, FunctionSquare,
+  Menu
 } from 'lucide-react';
 import { useStore } from '../store';
 import { CreatorTool, FontFamily } from '../types';
 import { useTranslation } from '../utils/translations';
+import { FONT_SIZE_PRESETS } from '../constants';
+import { BoardMenuPopup } from './BoardMenuPopup';
 
 // ── Palette & sizes ──────────────────────────────────────────────────────────
 const PALETTE = [
@@ -122,10 +125,14 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
     toggleCalculator, toggleTimer, toggleNotes, toggleQuiz,
     toggleUnitConverter, togglePeriodicTable, toggleAttendance, toggleTodoList,
     toggleSpinWheel, toggleScoreboard, toggleMathGraph,
+    isMenuOpen, toggleMenu, setIsMenuOpen
   } = useStore();
 
   const [openPanel, setOpenPanel] = useState<PanelId | null>(null);
-  const toggle = (p: PanelId) => setOpenPanel(prev => prev === p ? null : p);
+  const toggle = (p: PanelId) => {
+    setIsMenuOpen(false);
+    setOpenPanel(prev => prev === p ? null : p);
+  };
   const close = () => setOpenPanel(null);
 
   const activeShape = ALL_SHAPES.find(s => s.tool === activeTool);
@@ -179,7 +186,31 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
         />
       )}
 
-      <div className="absolute left-2 lg:left-4 top-1/2 -translate-y-1/2 pointer-events-auto z-50">
+      <div className="absolute left-2 lg:left-4 top-1/2 -translate-y-1/2 pointer-events-auto z-50 flex flex-col items-center">
+        {/* ── Hamburger Menu Button (Positioned just above the toolbar) ── */}
+        <div className="relative mb-3.5">
+          <motion.button
+            whileHover={{ scale: 1.08 }}
+            whileTap={{ scale: 0.94 }}
+            onClick={() => {
+              close();
+              toggleMenu();
+            }}
+            className={`w-11 h-11 rounded-full flex items-center justify-center transition-all cursor-pointer border shadow-md shadow-[#3F2A1D]/10 ${
+              isMenuOpen
+                ? 'bg-[#6B4423] text-[#FBF6F0] border-[#6B4423]'
+                : 'bg-[#FBF6F0]/95 hover:bg-white text-[#6B4423] border-[#E7DDD2] hover:border-[#6B4423]/40 backdrop-blur-2xl'
+            }`}
+            title="Board menu"
+            aria-label="Board menu"
+          >
+            <Menu size={18} />
+          </motion.button>
+
+          {/* Menu Popup next to the button with clean fading animation */}
+          <BoardMenuPopup />
+        </div>
+
         {/* ── Vertical Pill (Only 6 Clustered Buttons) ── */}
         <motion.div
           initial={{ opacity: 0, x: -14 }}
@@ -338,12 +369,31 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
               </button>
             ))}
             <div className="text-[9px] font-black uppercase tracking-widest text-[#A08B7A] mt-3 mb-1.5">{t('textSize', 'Text size')}</div>
+            <div className="grid grid-cols-3 gap-1 mb-2">
+              {FONT_SIZE_PRESETS.map(preset => (
+                <button
+                  key={preset.name}
+                  onClick={() => setFontSize(preset.whiteboardPx)}
+                  className={`px-1.5 py-1.5 rounded-lg text-center transition-all cursor-pointer ${
+                    fontSize === preset.whiteboardPx
+                      ? 'bg-[#6B4423] text-white font-bold shadow-xs'
+                      : 'bg-[#F6F0E8] text-[#6B4423] hover:bg-[#F4B183]/35 font-medium'
+                  }`}
+                  title={`${preset.label} (${preset.whiteboardPx}px)`}
+                >
+                  <div className="text-[10.5px] leading-tight font-bold">{preset.label}</div>
+                  <div className={`text-[9px] ${fontSize === preset.whiteboardPx ? 'text-white/80' : 'text-[#A08B7A]'}`}>
+                    {preset.whiteboardPx}px
+                  </div>
+                </button>
+              ))}
+            </div>
             <div className="flex gap-1 flex-wrap">
-              {[14, 20, 28, 40, 56].map(s => (
+              {[14, 18, 24, 28, 36, 48, 56].map(s => (
                 <button
                   key={s}
                   onClick={() => setFontSize(s)}
-                  className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-colors ${
+                  className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-colors cursor-pointer ${
                     fontSize === s ? 'bg-[#6B4423] text-white' : 'bg-[#F6F0E8] text-[#6B4423] hover:bg-[#F4B183]/35'
                   }`}
                 >

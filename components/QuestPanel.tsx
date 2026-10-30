@@ -118,7 +118,7 @@ export const QuestPanel: React.FC<QuestPanelProps> = ({
           >
             <div className="flex items-start justify-between gap-4 px-7 pt-6 pb-3">
               <div>
-                <p className="text-[11px] font-black tracking-[0.18em] text-[#C4A484]">Chalk</p>
+                <p className="text-[11px] font-black tracking-[0.18em] text-[#C4A484]">Inclu</p>
                 <h3 id="quest-panel-title" className="text-[28px] font-black leading-none tracking-tight text-[#3F2A1D]">
                   Quest
                 </h3>

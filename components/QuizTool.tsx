@@ -165,7 +165,7 @@ export const QuizTool: React.FC = () => {
                <ChevronRight size={14} className="rotate-180" /> {t('quiz_back', 'Back')}
              </button>
              <h3 className="text-xl font-extrabold text-[#3F2A1D] mb-2">{t('quiz_automation', 'Quiz from the board')}</h3>
-             <p className="text-[14px] text-[#A08B7A] mb-4 font-medium">{t('quiz_automationDesc', 'Chalk reads the whiteboard and writes questions from it.')}</p>
+             <p className="text-[14px] text-[#A08B7A] mb-4 font-medium">{t('quiz_automationDesc', 'Inclu reads the whiteboard and writes questions from it.')}</p>
              
              <div className="space-y-4">
                 <div className="space-y-2">

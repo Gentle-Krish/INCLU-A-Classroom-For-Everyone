@@ -13,7 +13,7 @@ export class QuestWriteError extends Error {
 }
 
 const SHAPE_ERROR = 'The quest did not come back in the right shape.';
-const LOCAL_ERROR = 'The offline Chalk model is not ready.';
+const LOCAL_ERROR = 'The offline Inclu model is not ready.';
 
 export interface QuestWriteInput {
   notes: string;

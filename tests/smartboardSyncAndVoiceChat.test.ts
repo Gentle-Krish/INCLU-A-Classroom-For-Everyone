@@ -40,6 +40,8 @@ describe('Smartboard Synchronization & Chat/Voice Mode Understanding', () => {
     it('strips polite prefixes and wake words in both Chat and Voice modes', () => {
       expect(stripConversationalPrefix('Halo Chalk, tolong buka kalkulator')).toBe('buka kalkulator');
       expect(stripConversationalPrefix('Chalk, coba perbesar layar')).toBe('perbesar layar');
+      expect(stripConversationalPrefix('Halo Inclu, tolong buka kalkulator')).toBe('buka kalkulator');
+      expect(stripConversationalPrefix('Inclu, coba perbesar layar')).toBe('perbesar layar');
       expect(stripConversationalPrefix('Please open periodic table')).toBe('open periodic table');
     });
   });

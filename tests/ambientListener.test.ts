@@ -21,7 +21,7 @@ describe('Chalk Hands-Free Ambient Classroom Listener Hook', () => {
   });
 
   it('matches and executes hands-free Timer command with custom minutes', () => {
-    const result = matchAndExecuteHandsFreeCommand('Chalk, pasang timer 10 menit');
+    const result = matchAndExecuteHandsFreeCommand('Inclu, pasang timer 10 menit');
     expect(result.matched).toBe(true);
     expect(result.action).toBe('TIMER');
     expect(result.detail).toBe('10 menit');
@@ -34,7 +34,7 @@ describe('Chalk Hands-Free Ambient Classroom Listener Hook', () => {
 
   it('matches and executes hands-free Attendance (Presensi) command', () => {
     expect(useStore.getState().isAttendanceOpen).toBe(false);
-    const result = matchAndExecuteHandsFreeCommand('Hai Chalk, buka presensi siswa');
+    const result = matchAndExecuteHandsFreeCommand('Hai Inclu, buka presensi siswa');
     expect(result.matched).toBe(true);
     expect(result.action).toBe('ATTENDANCE');
     expect(useStore.getState().isAttendanceOpen).toBe(true);

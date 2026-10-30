@@ -11,6 +11,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   res.status(200).json({
     success: true,
-    message: 'Local model downloads only apply to local Chalk instances.'
+    message: 'Local model downloads only apply to local Inclu instances.'
   });
 }

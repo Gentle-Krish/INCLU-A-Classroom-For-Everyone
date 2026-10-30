@@ -1,7 +1,7 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
-import { focusCanvasBounds } from '../utils/canvasNavigation';
+import { focusCanvasBounds, smoothFocusCanvas } from '../utils/canvasNavigation';
 import { DrawingToolbar } from '../components/DrawingToolbar';
 import { useAgentProcessor } from '../hooks/useAgentProcessor';
 import { useStore } from '../store';
@@ -84,6 +84,36 @@ describe('AI canvas framing', () => {
       expectVisible(canvas, canvas.getObjects()[0].getBoundingRect());
       expect(useStore.getState().viewportTransform).toEqual(canvas.viewportTransform);
     }
+  });
+
+  it('smoothly glides to target bounds and triggers autofocus reticle', async () => {
+    const canvas = makeCanvas();
+    const bounds = { left: 4000, top: 2000, width: 320, height: 280 };
+    const promise = smoothFocusCanvas(canvas, bounds, { duration: 100 });
+    expect(useStore.getState().autofocusTarget).toMatchObject({
+      left: 4000,
+      top: 2000,
+      width: 320,
+      height: 280,
+    });
+    await promise;
+    expectVisible(canvas, bounds);
+  });
+
+  it('shifts focus seamlessly from first widget to second newly created widget', async () => {
+    const canvas = makeCanvas();
+    const item1 = { left: 1000, top: 500, width: 300, height: 250 };
+    const item2 = { left: -5000, top: 8000, width: 400, height: 350 };
+
+    smoothFocusCanvas(canvas, item1, { duration: 200 });
+    const promise2 = smoothFocusCanvas(canvas, item2, { duration: 200 });
+
+    expect(useStore.getState().autofocusTarget).toMatchObject({
+      left: -5000,
+      top: 8000,
+    });
+    await promise2;
+    expectVisible(canvas, item2);
   });
 });
 

@@ -269,7 +269,7 @@ aiRouter.post("/pull-model", async (req, res) => {
   if (targetModel !== CHALK_LOCAL_DOWNLOAD_MODEL) {
     return res.status(400).json({
       success: false,
-      error: 'Only the Chalk local model can be downloaded on this laptop.'
+      error: 'Only the Inclu local model can be downloaded on this laptop.'
     });
   }
 
@@ -610,16 +610,18 @@ export const matchFastInteractiveCommand = (prompt?: string): { textResponse: st
     return null;
   }
 
-  // 1. Timer commands: e.g. "start a 5 minute timer", "set timer for 10 minutes", "timer 5 min", "start 5 minute timer"
-  const timerMatch = clean.match(/(?:start|set|create|put|add)?\s*(?:a\s*)?(\d+)\s*(minute|min|m|second|sec|s)?\s*timer/i)
-    || clean.match(/timer\s*(?:for\s*)?(\d+)\s*(minute|min|m|second|sec|s)?/i);
+  // 1. Timer commands (all variations: 5 minute timer, 10 minutes timer, timer for 10 min, set timer 10m, etc.)
+  const timerMatchA = clean.match(/(?:start|set|create|make|add|put|buka|pasang)?\s*(?:a\s+)?(\d+)\s*(minutes?|mins?|m|seconds?|secs?|s|hours?|hrs?|h|menit|detik|jam)?\s*(?:timer|stopwatch)/i);
+  const timerMatchB = clean.match(/(?:start|set|create|make|add|put|buka|pasang)?\s*(?:a\s+)?(?:timer|stopwatch)\s*(?:for|selama)?\s*(\d+)?\s*(minutes?|mins?|m|seconds?|secs?|s|hours?|hrs?|h|menit|detik|jam)?/i);
 
-  if (timerMatch) {
-    const amount = parseInt(timerMatch[1], 10);
-    const unit = timerMatch[2] ? timerMatch[2].toLowerCase() : 'm';
-    const isSeconds = unit.startsWith('s');
-    const totalSeconds = isSeconds ? amount : amount * 60;
-    const label = isSeconds ? `${amount}-second` : `${amount}-minute`;
+  if (timerMatchA || (timerMatchB && (timerMatchB[1] || clean.includes('timer')))) {
+    const num = timerMatchA ? parseInt(timerMatchA[1], 10) : (timerMatchB && timerMatchB[1] ? parseInt(timerMatchB[1], 10) : 5);
+    const rawUnit = timerMatchA ? timerMatchA[2] : (timerMatchB ? timerMatchB[2] : 'm');
+    const unit = (rawUnit || 'm').toLowerCase();
+    const isSeconds = unit.startsWith('s') || unit.startsWith('det');
+    const isHours = unit.startsWith('h') || unit.startsWith('jam');
+    const totalSeconds = isSeconds ? num : isHours ? num * 3600 : num * 60;
+    const label = isSeconds ? `${num}-second` : isHours ? `${num}-hour` : `${num}-minute`;
 
     return {
       textResponse: `Started a ${label} timer on the smartboard.`,

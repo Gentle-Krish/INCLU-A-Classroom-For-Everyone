@@ -76,7 +76,7 @@ export default async function handler(req: any, res: any) {
         }).join('\n')
       : '  (None)';
 
-    const systemInstruction = `You are Chalk, an autonomous agentic interactive whiteboard and pedagogical AI.
+    const systemInstruction = `You are Inclu, an autonomous agentic interactive whiteboard and pedagogical AI.
 You have FULL AUTONOMOUS COMPUTER USE capabilities to create, draw, move, and manipulate content on the whiteboard canvas.
 
 CURRENT CANVAS STATE:

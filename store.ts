@@ -10,6 +10,7 @@ interface AppStore extends AgentState {
   messages: ChatMessage[];
   zoom: number;
   viewportTransform: number[];
+  autofocusTarget: { left: number; top: number; width: number; height: number; timestamp: number } | null;
   domElements: Record<string, DomElementState>;
   lastUploadedImage: string | null; // Base64
   attachedDocument: AttachedDocument | null;
@@ -62,6 +63,19 @@ interface AppStore extends AgentState {
   
   isBoardSettingsOpen: boolean;
   toggleBoardSettings: () => void;
+
+  isMenuOpen: boolean;
+  setIsMenuOpen: (open: boolean) => void;
+  toggleMenu: () => void;
+
+  isSettingsOpen: boolean;
+  setIsSettingsOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
+
+  isExportOpen: boolean;
+  setIsExportOpen: (open: boolean) => void;
+
+  isGuideOpen: boolean;
+  setIsGuideOpen: (open: boolean) => void;
 
   isHistoryOpen: boolean;
   toggleHistory: () => void;
@@ -170,6 +184,7 @@ interface AppStore extends AgentState {
   currentTaskAbortController: AbortController | null;
   setTaskAbortController: (controller: AbortController | null) => void;
   setViewport: (zoom: number, transform: number[]) => void;
+  setAutofocusTarget: (target: { left: number; top: number; width: number; height: number; timestamp: number } | null) => void;
   
   // DOM Element Management
   updateDomElement: (id: string, state: Partial<DomElementState>) => void;
@@ -639,6 +654,7 @@ export const useStore = create<AppStore>((set, get) => ({
   },
   zoom: 1,
   viewportTransform: [1, 0, 0, 1, 0, 0],
+  autofocusTarget: null,
   domElements: {},
   lastUploadedImage: null,
   attachedDocument: null,
@@ -767,6 +783,19 @@ export const useStore = create<AppStore>((set, get) => ({
   
   isBoardSettingsOpen: false,
   toggleBoardSettings: () => set((state) => ({ isBoardSettingsOpen: !state.isBoardSettingsOpen })),
+
+  isMenuOpen: false,
+  setIsMenuOpen: (open) => set({ isMenuOpen: open }),
+  toggleMenu: () => set((state) => ({ isMenuOpen: !state.isMenuOpen })),
+
+  isSettingsOpen: false,
+  setIsSettingsOpen: (open) => set((state) => ({ isSettingsOpen: typeof open === 'function' ? open(state.isSettingsOpen) : open })),
+
+  isExportOpen: false,
+  setIsExportOpen: (open) => set({ isExportOpen: open }),
+
+  isGuideOpen: false,
+  setIsGuideOpen: (open) => set({ isGuideOpen: open }),
 
   isHistoryOpen: false,
   toggleHistory: () => set((state) => ({ isHistoryOpen: !state.isHistoryOpen })),
@@ -1019,6 +1048,7 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   setViewport: (zoom, transform) => set({ zoom, viewportTransform: transform }),
+  setAutofocusTarget: (target) => set({ autofocusTarget: target }),
 
   updateDomElement: (id, newState) => set((state) => {
     const existing = state.domElements[id] || {};

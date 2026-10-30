@@ -6,6 +6,9 @@ export function speechProviders(options: {
   cloudBlocked: boolean;
   hasKey: boolean;
 }): SpeechProvider[] {
-  if (options.preferWhisper || options.cloudBlocked || !options.hasKey) return ['whisper'];
+  if (options.preferWhisper) {
+    return options.hasKey && !options.cloudBlocked ? ['whisper', 'gemini'] : ['whisper'];
+  }
+  if (options.cloudBlocked || !options.hasKey) return ['whisper'];
   return ['gemini', 'whisper'];
 }

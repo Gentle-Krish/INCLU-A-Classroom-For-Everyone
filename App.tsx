@@ -23,9 +23,9 @@ import {
   Image as ImageIcon, File, History, Settings, Mic, Monitor, Share, Download, Sparkles,
   CheckCircle2, ChevronDown, ChevronRight, Keyboard, Menu,
   Clock, CheckSquare, PencilRuler, ShieldCheck, HelpCircle, User,
-  MoreHorizontal, Plus, X, Check, Pencil, Send, Trash2, Archive, Database, Network, Maximize2
+  MoreHorizontal, Plus, X, Check, Pencil, Send, Trash2, Archive, Database, Network, Maximize2,
+  Undo2, Redo2
 } from 'lucide-react';
-import { SidebarItem } from './components/SidebarItem';
 import { ChatMessageItem } from './components/ChatMessageItem';
 import { Logo } from './components/landing/shared';
 import { useStore } from './store';
@@ -46,14 +46,6 @@ const App: React.FC = () => {
   const [isQuestOpen, setIsQuestOpen] = useState(false);
   const [questKick, setQuestKick] = useState(0);
   const pendingQuestWrite = useRef(false);
-  const [isExportOpen, setIsExportOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isGuideOpen, setIsGuideOpen] = useState(false);
-  const [isEditingName, setIsEditingName] = useState(false);
-  const [editNameValue, setEditNameValue] = useState('');
-
-  // Responsive sidebar detection
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMobileLayout, setIsMobileLayout] = useState(false);
 
   const { roomId, isViewer, startClass, openQuest, closeQuest } = useSocketSync(canvasRef);
@@ -63,12 +55,32 @@ const App: React.FC = () => {
     logs, inputMode, setInputMode, messages, isAiDrawerOpen, toggleAiDrawer, isAiModalOpen, setAiModalOpen,
     chatInputText, setChatInputText, lastUploadedImage, setLastUploadedImage,
     attachedDocument, setAttachedDocument,
+    isExportOpen, setIsExportOpen, isSettingsOpen, setIsSettingsOpen, isGuideOpen, setIsGuideOpen,
     userName, setUserName,
     pages, currentPageIndex, switchPage, addPage, isThinking, isActing,
     abortTask, isVoiceListening, interimInputText,
-    classRoster
+    classRoster,
+    undoCanvas, redoCanvas
   } = useStore();
   const joinedCount = countJoinedStudents(classRoster);
+
+  const handleDeleteSelection = () => {
+    if (!canvasRef.current) return;
+    const canvas = canvasRef.current;
+    const activeObjects = canvas.getActiveObjects ? canvas.getActiveObjects() : (canvas.getActiveObject ? [canvas.getActiveObject()].filter(Boolean) : []);
+    if (activeObjects.length > 0) {
+      activeObjects.forEach((obj: any) => {
+        canvas.remove(obj);
+        if (obj.isDomPlaceholder) {
+          useStore.getState().removeDomElement(obj.id);
+        }
+      });
+      if (typeof canvas.discardActiveObject === 'function') {
+        canvas.discardActiveObject();
+      }
+      canvas.requestRenderAll();
+    }
+  };
 
   useEffect(() => {
     loadSessions();
@@ -98,9 +110,6 @@ const App: React.FC = () => {
     const handleResize = () => {
       const mobile = window.innerWidth < 1024;
       setIsMobileLayout(mobile);
-      if (mobile) {
-        setIsSidebarOpen(false);
-      }
     };
     handleResize();
     window.addEventListener('resize', handleResize);
@@ -227,7 +236,6 @@ const App: React.FC = () => {
     setIsSettingsOpen(false);
     setIsExportOpen(false);
     setIsGuideOpen(false);
-    if (isMobileLayout) setIsSidebarOpen(false);
     if (mode === 'modal') setAiModalOpen(true);
     else if (!isAiDrawerOpen) toggleAiDrawer();
   };
@@ -318,15 +326,6 @@ const App: React.FC = () => {
             className="h-[72px] bg-transparent flex items-center justify-between px-4 lg:px-6 shrink-0 z-20 relative gap-3 select-none"
           >
             <div className="flex items-center gap-3 shrink-0 z-10">
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                className="w-11 h-11 rounded-full bg-[#FBF6F0] hover:bg-white text-[#6B4423] border border-[#E7DDD2] flex items-center justify-center transition-all cursor-pointer"
-                title="Board menu"
-              >
-                <Menu size={18} />
-              </motion.button>
               <div
                 onClick={isWeb ? navigateToLanding : undefined}
                 className={`flex items-center gap-2.5 ${isWeb ? 'cursor-pointer' : ''}`}
@@ -439,149 +438,6 @@ const App: React.FC = () => {
             <ToolOverlay />
             <AssistiveDock />
 
-            {/* Mobile Sidebar Overlay */}
-            <AnimatePresence>
-              {isSidebarOpen && isMobileLayout && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  onClick={() => setIsSidebarOpen(false)}
-                  className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-30 lg:hidden"
-                />
-              )}
-            </AnimatePresence>
-
-            {/* 2. LEFT SIDEBAR (NAVIGATION) */}
-            <AnimatePresence initial={false}>
-              {isSidebarOpen && (
-                <motion.aside
-                  initial={{ width: 0, opacity: 0, x: -20 }}
-                  animate={{ width: 260, opacity: 1, x: 0 }}
-                  exit={{ width: 0, opacity: 0, x: -20 }}
-                  transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-                  className="absolute lg:relative left-2 top-0 bottom-2 lg:left-0 lg:bottom-0 max-h-full bg-[#FBF6F0] backdrop-blur-xl rounded-[28px] flex flex-col z-40 lg:z-10 shrink-0 border border-[#E7DDD2] shadow-[0_8px_30px_rgb(63,42,29,0.06)] overflow-hidden"
-                >
-                  <div className="w-65 h-full flex flex-col">
-                    <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-1.5 custom-scrollbar">
-                      {/* 1. Whiteboard Core */}
-                      <SidebarItem
-                        icon={Square}
-                        label="Whiteboard"
-                        active={!isHistoryOpen && !isSettingsOpen && !isExportOpen && !isAiDrawerOpen && !isAiModalOpen}
-                        onClick={() => {
-                          if (isHistoryOpen) toggleHistory();
-                          setIsSettingsOpen(false);
-                          setIsExportOpen(false);
-                          setAiModalOpen(false);
-                          if (isAiDrawerOpen) toggleAiDrawer();
-                        }}
-                      />
-                      <SidebarItem icon={Sparkles} label="AI Assistant" active={isAiDrawerOpen}
-                        onClick={() => openAiChat('sidebar')} />
-                      <SidebarItem icon={Maximize2} label="AI Chat (Popup)" active={isAiModalOpen}
-                        onClick={() => openAiChat('modal')} />
-
-                      {/* 2. History */}
-                      <SidebarItem
-                        icon={Clock}
-                        label="Session history"
-                        active={isHistoryOpen}
-                        onClick={() => {
-                          toggleHistory();
-                          setIsSettingsOpen(false);
-                          setIsExportOpen(false);
-                        }}
-                      />
-
-                      {/* 3. Export & Import */}
-                      <SidebarItem
-                        icon={Download}
-                        label="Export and import"
-                        active={isExportOpen}
-                        onClick={() => {
-                          setIsExportOpen(true);
-                          if (isHistoryOpen) toggleHistory();
-                          setIsSettingsOpen(false);
-                        }}
-                      />
-
-                      {/* 4. Settings */}
-                      <SidebarItem
-                        icon={Settings}
-                        label="Settings"
-                        active={isSettingsOpen}
-                        onClick={() => {
-                          setIsSettingsOpen(v => !v);
-                          if (isHistoryOpen) toggleHistory();
-                          setIsExportOpen(false);
-                          setIsGuideOpen(false);
-                        }}
-                      />
-
-                      {/* 5. Guide */}
-                      <SidebarItem
-                        icon={HelpCircle}
-                        label="Teacher guide"
-                        active={isGuideOpen}
-                        onClick={() => {
-                          setIsGuideOpen(true);
-                          if (isHistoryOpen) toggleHistory();
-                          setIsSettingsOpen(false);
-                          setIsExportOpen(false);
-                        }}
-                      />
-
-                      {/* 6. Landing / About (Web Only) */}
-                      {isWeb && (
-                        <SidebarItem
-                          icon={Home}
-                          label="Home"
-                          active={false}
-                          onClick={navigateToLanding}
-                        />
-                      )}
-                    </nav>
-
-                    <div className="p-5 border-t border-slate-100/80 space-y-4 bg-slate-50/50">
-                      <div className="flex items-center gap-3 px-2 py-2 rounded-2xl hover:bg-white hover:shadow-sm transition-all cursor-pointer group">
-                        <div className="w-11 h-11 rounded-[1.1rem] shadow-sm bg-[#6B4423] flex items-center justify-center text-[#FBF6F0] font-black text-lg shrink-0">
-                          {userName.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          {isEditingName ? (
-                            <form 
-                              onSubmit={(e) => { 
-                                e.preventDefault(); 
-                                if (editNameValue.trim()) setUserName(editNameValue); 
-                                setIsEditingName(false); 
-                              }}
-                              className="flex items-center gap-1"
-                            >
-                              <input
-                                autoFocus
-                                value={editNameValue}
-                                onChange={(e) => setEditNameValue(e.target.value)}
-                                className="text-[14px] font-bold text-slate-900 border-b border-blue-400 outline-none bg-transparent w-full"
-                                onBlur={() => { if (editNameValue.trim()) setUserName(editNameValue); setIsEditingName(false); }}
-                              />
-                              <button type="submit" className="text-blue-600"><Check size={14} /></button>
-                            </form>
-                          ) : (
-                            <div className="flex items-center gap-1.5" onClick={() => { setEditNameValue(userName); setIsEditingName(true); }}>
-                              <div className="text-[14px] font-bold text-slate-900 truncate">{userName}</div>
-                              <Pencil size={12} className="text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-                            </div>
-                          )}
-                          <div className="text-[12px] text-[#A08B7A] font-medium">Class teacher</div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </motion.aside>
-              )}
-            </AnimatePresence>
-
             {/* 3 & 4. CANVAS AREA & VERTICAL TOOLBAR */}
             <main className="flex-1 min-w-0 relative h-full bg-[#FBF7F2] rounded-[28px] border border-[#E7DDD2] shadow-[0_16px_40px_rgba(63,42,29,0.06)] overflow-hidden flex flex-col">
 
@@ -599,36 +455,68 @@ const App: React.FC = () => {
                    <CanvasManager onCanvasReady={handleCanvasReady} />
                </div>
 
-               {/* Page Navigation Indicator */}
-               <div className="absolute bottom-6 left-6 z-10 flex items-center gap-1.5 p-1.5 bg-[#FBF6F0]/95 backdrop-blur-xl rounded-full shadow-lg border border-[#E7DDD2]">
-                {pages.map((_, idx) => (
-                  <button
-                    key={idx}
-                    disabled={isThinking || isActing}
-                    onClick={() => switchPage(idx)}
-                    className={`min-w-[34px] h-8 px-2.5 rounded-full text-[13px] font-black transition-all cursor-pointer ${
-                      isThinking || isActing ? 'opacity-50 cursor-not-allowed' : ''
-                    } ${
-                      currentPageIndex === idx 
-                        ? 'bg-[#6B4423] text-[#FBF6F0] shadow-sm' 
-                        : 'text-[#8A7568] hover:bg-[#F3EBE3] hover:text-[#3F2A1D]'
-                    }`}
-                  >
-                    {idx + 1}
-                  </button>
-                ))}
-                <div className="w-px h-4 bg-[#E7DDD2] mx-1" />
-                <button 
-                  disabled={isThinking || isActing}
-                  onClick={() => addPage()}
-                  className={`w-8 h-8 flex items-center justify-center rounded-full text-[#A08B7A] transition-all cursor-pointer ${
-                    isThinking || isActing ? 'opacity-50 cursor-not-allowed' : 'hover:bg-[#F3EBE3] hover:text-[#3F2A1D]'
-                  }`}
-                  title="Add a page"
-                >
-                  <Plus size={16} strokeWidth={2.5} />
-                </button>
-              </div>
+               {/* Top Center Workspace Control Cluster: Undo/Redo | Sheet Pages | Delete */}
+               <div className="absolute top-4 lg:top-5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 pointer-events-auto select-none">
+                 {/* Undo & Redo (Separate pill on the left) */}
+                 <div className="flex items-center gap-0.5 p-1 bg-[#FBF6F0]/95 backdrop-blur-xl rounded-full shadow-lg border border-[#E7DDD2]">
+                   <button
+                     onClick={() => undoCanvas()}
+                     title="Undo (Ctrl+Z)"
+                     className="w-8 h-8 flex items-center justify-center text-[#A08B7A] hover:text-[#6B4423] hover:bg-[#F3EBE3] rounded-full transition-all active:scale-90 cursor-pointer"
+                   >
+                     <Undo2 size={16} />
+                   </button>
+                   <button
+                     onClick={() => redoCanvas()}
+                     title="Redo (Ctrl+Y)"
+                     className="w-8 h-8 flex items-center justify-center text-[#A08B7A] hover:text-[#6B4423] hover:bg-[#F3EBE3] rounded-full transition-all active:scale-90 cursor-pointer"
+                   >
+                     <Redo2 size={16} />
+                   </button>
+                 </div>
+
+                 {/* Sheet / Page Navigation Bar (Center) */}
+                 <div className="flex items-center gap-1.5 p-1.5 bg-[#FBF6F0]/95 backdrop-blur-xl rounded-full shadow-lg border border-[#E7DDD2]">
+                   {pages.map((_, idx) => (
+                     <button
+                       key={idx}
+                       disabled={isThinking || isActing}
+                       onClick={() => switchPage(idx)}
+                       className={`min-w-[34px] h-8 px-2.5 rounded-full text-[13px] font-black transition-all cursor-pointer ${
+                         isThinking || isActing ? 'opacity-50 cursor-not-allowed' : ''
+                       } ${
+                         currentPageIndex === idx 
+                           ? 'bg-[#6B4423] text-[#FBF6F0] shadow-sm' 
+                           : 'text-[#8A7568] hover:bg-[#F3EBE3] hover:text-[#3F2A1D]'
+                       }`}
+                     >
+                       {idx + 1}
+                     </button>
+                   ))}
+                   <div className="w-px h-4 bg-[#E7DDD2] mx-1" />
+                   <button 
+                     disabled={isThinking || isActing}
+                     onClick={() => addPage()}
+                     className={`w-8 h-8 flex items-center justify-center rounded-full text-[#A08B7A] transition-all cursor-pointer ${
+                       isThinking || isActing ? 'opacity-50 cursor-not-allowed' : 'hover:bg-[#F3EBE3] hover:text-[#3F2A1D]'
+                     }`}
+                     title="Add a page"
+                   >
+                     <Plus size={16} strokeWidth={2.5} />
+                   </button>
+                 </div>
+
+                 {/* Delete Button (Separate pill on the right) */}
+                 <div className="flex items-center p-1 bg-[#FBF6F0]/95 backdrop-blur-xl rounded-full shadow-lg border border-[#E7DDD2]">
+                   <button
+                     onClick={handleDeleteSelection}
+                     title="Delete selected (Del)"
+                     className="w-8 h-8 flex items-center justify-center text-[#A08B7A] hover:text-rose-600 hover:bg-rose-50 rounded-full transition-all active:scale-90 cursor-pointer"
+                   >
+                     <Trash2 size={16} />
+                   </button>
+                 </div>
+               </div>
 
                {/* UI Overlay for Toolbar/Controls (mapped in ChatInterface) */}
                {canvasRef.current && (

@@ -3,7 +3,7 @@ import React, { useEffect, useRef } from 'react';
 import { useStore } from '../store';
 import { Point } from '../types';
 import { sounds } from '../utils/sounds';
-import { focusCanvasBounds } from '../utils/canvasNavigation';
+import { focusCanvasBounds, smoothFocusCanvas } from '../utils/canvasNavigation';
 
 // CONFIG: High-Speed Agent Action Emulation
 const MIN_REACTION_TIME = 30; 
@@ -90,10 +90,9 @@ export const useAgentProcessor = (canvasRef: React.MutableRefObject<any>) => {
 
   const execute = async (x: number, y: number, label: string, taskFn: () => void | Promise<void>) => {
     const canvas = canvasRef.current;
-    const focus = (bounds: { left: number; top: number; width: number; height: number }) => {
+    const focus = async (bounds: { left: number; top: number; width: number; height: number }) => {
       if (!canvas || canvas.__isPanning) return;
-      const transform = focusCanvasBounds(canvas, bounds);
-      if (transform) useStore.getState().setViewport(transform[0], transform);
+      await smoothFocusCanvas(canvas, bounds);
     };
     const followsContent = !['Panning...', 'Observing...', 'Deleting...'].includes(label);
     const previousObjects = new Set(canvas?.getObjects() || []);
@@ -121,14 +120,14 @@ export const useAgentProcessor = (canvasRef: React.MutableRefObject<any>) => {
       if (bounds.length) {
         const left = Math.min(...bounds.map((b: any) => b.left));
         const top = Math.min(...bounds.map((b: any) => b.top));
-        focus({ left, top,
+        await focus({ left, top,
           width: Math.max(...bounds.map((b: any) => b.left + b.width)) - left,
           height: Math.max(...bounds.map((b: any) => b.top + b.height)) - top });
       } else {
         const target = canvas.getObjects().find((obj: any) => obj.left === x && obj.top === y);
         const widget = Object.values(useStore.getState().domElements).find(el => el.x === x && el.y === y);
-        if (target) focus(target.getBoundingRect(true, true));
-        else if (widget) focus({ left: x - widget.width / 2, top: y - widget.height / 2, width: widget.width, height: widget.height });
+        if (target) await focus(target.getBoundingRect(true, true));
+        else if (widget) await focus({ left: x - widget.width / 2, top: y - widget.height / 2, width: widget.width, height: widget.height });
       }
     }
 
@@ -479,14 +478,14 @@ export const useAgentProcessor = (canvasRef: React.MutableRefObject<any>) => {
         case 'WRITE_TEXT': {
           const { text, x, y, color, fontSize } = action.payload;
           await execute(x, y, 'Writing...', () => {
-            const defaultColor = useStore.getState().theme === 'dark' ? '#ffffff' : '#000000';
-            const maxTextWidth = Math.min(400, (canvas.width || 800) - 40);
-            const obj = new window.fabric.Textbox(text, {
+            const defaultColor = useStore.getState().theme === 'dark' ? '#FBF6F0' : '#1F2937';
+            const fabricGlobal = window.fabric || (window as any).fabric;
+            if (!fabricGlobal) return;
+            const obj = new fabricGlobal.IText(text, {
               left: x, top: y,
-              width: maxTextWidth,
-              fontFamily: action.payload.fontFamily || 'system-ui, sans-serif',
+              fontFamily: action.payload.fontFamily || useStore.getState().fontFamily || 'Inter',
               fill: color || defaultColor,
-              fontSize: fontSize || 20,
+              fontSize: fontSize || 28,
               originX: 'center', originY: 'center',
               textAlign: 'center',
               id: `text_${Date.now()}`
@@ -494,6 +493,7 @@ export const useAgentProcessor = (canvasRef: React.MutableRefObject<any>) => {
             canvas.add(obj);
             canvas.setActiveObject(obj);
             canvas.requestRenderAll();
+            canvas.fire('object:modified');
           });
           break;
         }

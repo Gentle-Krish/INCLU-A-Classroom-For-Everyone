@@ -75,7 +75,7 @@ export const AssistiveDock: React.FC = () => {
 
   return (
     <div
-      className={`fixed bottom-24 ${
+      className={`fixed bottom-6 ${
         isAiDrawerOpen ? 'lg:right-[404px] right-6' : 'right-6'
       } z-50 flex flex-col items-end gap-2 font-sans select-none pointer-events-auto transition-[right] duration-300`}
     >

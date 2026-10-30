@@ -335,7 +335,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose }) => {
           {/* ════════ TAB 1: KECERDASAN AI ════════ */}
           {activeTab === 'ai' && (
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-              {/* Panduan Cepat Pemula & Pengingat Penting Model Chalk / API Key */}
+              {/* Panduan Cepat Pemula & Pengingat Penting Model Inclu / API Key */}
               <div className="bg-[#FFF6EE] rounded-3xl border-2 border-[#6B4423]/20 p-5 shadow-xs space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">

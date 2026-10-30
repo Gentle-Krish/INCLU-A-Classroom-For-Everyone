@@ -236,7 +236,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({ isOpen, onClose, can
     }
   };
 
-  // ── 5. EXPORT PROJECT JSON / .Chalk ──────────────────────────────────────
+  // ── 5. EXPORT PROJECT JSON / .inclu ──────────────────────────────────────
   const handleExportJSON = () => {
     if (!canvasRef.current) return;
     const canvas = canvasRef.current;

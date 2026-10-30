@@ -33,7 +33,7 @@ describe('board provider routing', () => {
     })).toEqual(['ollama']);
   });
 
-  it('uses the installed Chalk local model name', () => {
+  it('uses the installed Inclu local model name', () => {
     expect(localModelName('chalk-model:latest', ['chalk-gemma:2b', 'gemma4:e2b'], 'chalk-gemma:2b')).toBe('chalk-gemma:2b');
     expect(localModelName('chalk-gemma:2b', ['chalk-gemma:2b'], 'chalk-gemma:2b')).toBe('chalk-gemma:2b');
   });

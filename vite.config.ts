@@ -23,8 +23,8 @@ export default defineConfig(({ mode }) => {
           registerType: 'autoUpdate',
           includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
           manifest: {
-            name: 'Chalk++ Digital Classroom',
-            short_name: 'Chalk++',
+            name: 'Inclu Digital Classroom',
+            short_name: 'Inclu',
             description: 'AI-Powered Digital Classroom for Local & Cloud Learning',
             theme_color: '#2563eb',
             icons: [

@@ -10,11 +10,22 @@ import { motion, AnimatePresence } from 'motion/react';
 import { toast } from '../utils/toast';
 import { parseDocumentFile } from '../utils/documentParser';
 import { markdownToMermaidMindmap } from './MermaidTool';
+import { smoothFocusCanvas } from '../utils/canvasNavigation';
 import { UploadCloud, FileText, Image as ImageIcon, Sparkles } from 'lucide-react';
 
 interface CanvasManagerProps {
   onCanvasReady: (canvas: any) => void;
 }
+
+export const isTextEmptyOrAbandoned = (o: any): boolean => {
+  if (!o) return false;
+  const isTextType = o.type === 'i-text' || o.type === 'textbox' || o.type === 'text';
+  if (!isTextType) return false;
+  const text = typeof o.text === 'string' ? o.text.trim() : '';
+  if (!text || text === '') return true;
+  if (o.__isNewPlaceholder && text === 'Type text...') return true;
+  return false;
+};
 
 export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -175,6 +186,37 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
     });
 
     fabricRef.current = canvas;
+
+    const cleanupEmptyTextObject = (obj: any) => {
+      if (!obj || obj.isEditing) return;
+      if (isTextEmptyOrAbandoned(obj)) {
+        if (canvas.getActiveObject() === obj) {
+          canvas.discardActiveObject();
+        }
+        canvas.remove(obj);
+        canvas.requestRenderAll();
+        canvas.fire('object:modified');
+      }
+    };
+
+    const pruneAllEmptyTexts = () => {
+      const objects = canvas.getObjects();
+      let changed = false;
+      objects.forEach((o: any) => {
+        if (!o.isEditing && isTextEmptyOrAbandoned(o)) {
+          if (canvas.getActiveObject() === o) {
+            canvas.discardActiveObject();
+          }
+          canvas.remove(o);
+          changed = true;
+        }
+      });
+      if (changed) {
+        canvas.requestRenderAll();
+        canvas.fire('object:modified');
+      }
+    };
+
     const resizeCanvas = () => {
       if (!canvas || !canvas.lowerCanvasEl || !containerRef.current) return;
       const { clientWidth, clientHeight } = containerRef.current;
@@ -288,6 +330,7 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
 
     canvas.on('mouse:down', function(opt: any) {
       if (isViewerUrl) return;
+      pruneAllEmptyTexts();
       const evt = opt.e;
       const isTouch = evt.touches && evt.touches.length === 1;
       const isRightClick = evt.button === 2;
@@ -430,13 +473,15 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
     window.addEventListener('resizeCanvasPlaceholder', handleResizePlaceholder);
 
     const handleAddPlaceholder = (e: any) => {
-      const { id, x, y, width = 400, height = 350 } = e.detail || {};
+      const { id, x, y, width = 400, height = 350, autofocus = true } = e.detail || {};
       if (!id || !window.fabric) return;
       const existing = canvas.getObjects().find((o: any) => o.id === id);
       if (existing) return;
+      const posX = x ?? 960;
+      const posY = y ?? 540;
       const placeholder = new window.fabric.Rect({
-        left: x ?? 960,
-        top: y ?? 540,
+        left: posX,
+        top: posY,
         width,
         height,
         fill: 'rgba(0,0,0,0.001)',
@@ -453,6 +498,15 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
       });
       canvas.add(placeholder);
       canvas.requestRenderAll();
+
+      if (autofocus && !canvas.__isPanning) {
+        smoothFocusCanvas(canvas, {
+          left: posX - width / 2,
+          top: posY - height / 2,
+          width,
+          height,
+        });
+      }
     };
     window.addEventListener('addCanvasPlaceholder', handleAddPlaceholder);
 
@@ -565,6 +619,18 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
       const obj = e.target;
       if (obj && obj.isDomPlaceholder) removeDomElement(obj.id);
     });
+
+    canvas.on('text:editing:exited', (e: any) => {
+      cleanupEmptyTextObject(e?.target);
+    });
+
+    canvas.on('selection:cleared', () => {
+      pruneAllEmptyTexts();
+    });
+
+    canvas.on('selection:updated', () => {
+      pruneAllEmptyTexts();
+    });
     
     canvas.on('path:created', (e: any) => {
       const path = e.path;
@@ -667,7 +733,25 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
       }, 1000);
     };
 
-    canvas.on('object:added', () => saveHistory());
+    canvas.on('object:added', (e: any) => {
+      const obj = e?.target;
+      if (obj && (obj.type === 'i-text' || obj.type === 'textbox' || obj.type === 'text')) {
+        const cleanIfEmpty = () => {
+          if (!obj.canvas) return;
+          if (!obj.isEditing && isTextEmptyOrAbandoned(obj)) {
+            if (canvas.getActiveObject() === obj) {
+              canvas.discardActiveObject();
+            }
+            canvas.remove(obj);
+            canvas.requestRenderAll();
+            canvas.fire('object:modified');
+          }
+        };
+        obj.on('editing:exited', cleanIfEmpty);
+        obj.on('deselected', cleanIfEmpty);
+      }
+      saveHistory();
+    });
     canvas.on('object:modified', () => saveHistory());
     canvas.on('object:removed', () => saveHistory());
     
@@ -779,6 +863,27 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
       return;
     }
 
+    const canvasObjs = canvas.getObjects();
+    let cleanedEmptyTexts = false;
+    canvasObjs.forEach((o: any) => {
+      if (o.type === 'i-text' || o.type === 'textbox' || o.type === 'text') {
+        if (o.isEditing && activeTool !== 'TEXT') {
+          o.exitEditing?.();
+        }
+        if (!o.isEditing && isTextEmptyOrAbandoned(o)) {
+          if (canvas.getActiveObject() === o) {
+            canvas.discardActiveObject();
+          }
+          canvas.remove(o);
+          cleanedEmptyTexts = true;
+        }
+      }
+    });
+    if (cleanedEmptyTexts) {
+      canvas.requestRenderAll();
+      canvas.fire('object:modified');
+    }
+
     if (activeTool === 'HAND') {
       canvas.isDrawingMode = false;
       canvas.selection = false;
@@ -825,6 +930,28 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
          originX: 'center', originY: 'center',
          id: `text_${Date.now()}`
        });
+       (text as any).__isNewPlaceholder = true;
+
+       const cleanIfEmpty = () => {
+         if (!text.canvas) return;
+         if (!text.isEditing && isTextEmptyOrAbandoned(text)) {
+           if (canvas.getActiveObject() === text) {
+             canvas.discardActiveObject();
+           }
+           canvas.remove(text);
+           canvas.requestRenderAll();
+           canvas.fire('object:modified');
+         }
+       };
+
+       text.on('changed', () => {
+         if (text.text !== 'Type text...') {
+           (text as any).__isNewPlaceholder = false;
+         }
+       });
+       text.on('editing:exited', cleanIfEmpty);
+       text.on('deselected', cleanIfEmpty);
+
        canvas.add(text);
        canvas.setActiveObject(text);
        text.enterEditing();

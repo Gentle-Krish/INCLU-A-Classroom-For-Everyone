@@ -789,6 +789,37 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ canvasRef }) => {
       />
       <input id="canvas-upload" type="file" className="hidden" accept="image/*" onChange={handleCanvasImageUpload} />
 
+      {/* Top Right Zoom Controls */}
+      <div className="absolute top-4 lg:top-5 right-4 lg:right-6 pointer-events-auto z-20">
+        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FBF6F0]/95 backdrop-blur-xl rounded-full shadow-lg border border-[#E7DDD2]">
+          <button
+            onClick={() => handleZoom('out')}
+            className="w-8 h-8 flex items-center justify-center text-[#A08B7A] hover:text-[#6B4423] hover:bg-[#F3EBE3] rounded-full transition-all active:scale-90 cursor-pointer"
+            title="Zoom out (-)"
+          >
+            <Minus size={16} />
+          </button>
+          <span className="text-[13px] font-black text-[#6B4423] min-w-12 text-center tracking-tight select-none">
+            {Math.round(zoom * 100)}%
+          </span>
+          <button
+            onClick={() => handleZoom('in')}
+            className="w-8 h-8 flex items-center justify-center text-[#A08B7A] hover:text-[#6B4423] hover:bg-[#F3EBE3] rounded-full transition-all active:scale-90 cursor-pointer"
+            title="Zoom in (+)"
+          >
+            <Plus size={16} />
+          </button>
+          <div className="w-px h-4 bg-[#E7DDD2] mx-1" />
+          <button
+            onClick={() => handleZoom('reset')}
+            className="w-8 h-8 flex items-center justify-center text-[#8A7568] hover:text-[#3F2A1D] hover:bg-[#F3EBE3] rounded-full transition-all active:scale-90 cursor-pointer"
+            title="Fit to screen (0)"
+          >
+            <Maximize size={16} />
+          </button>
+        </div>
+      </div>
+
       {/* ====== BOTTOM CONTROLS ====== */}
       <div className="absolute bottom-4 lg:bottom-6 left-3 lg:left-6 right-3 lg:right-6 pointer-events-none flex flex-col md:flex-row items-center md:items-end md:justify-between z-40 gap-4">
 
@@ -835,12 +866,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ canvasRef }) => {
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[11px] font-semibold text-[#6B4423] uppercase tracking-wider flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 bg-[#6B4423] rounded-full animate-pulse" />
-                    Transkripsi
+                    {isListening ? 'Transcribing...' : 'Transcript'}
                   </span>
                   <button
                     onClick={() => setShowTranscript(false)}
                     className="text-slate-400 hover:text-slate-600 transition-colors"
-                    title="Sembunyikan"
+                    title="Hide"
                   >
                     <ChevronDown size={16} />
                   </button>
@@ -866,7 +897,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ canvasRef }) => {
                 onClick={() => setShowTranscript(true)}
                 className="pointer-events-auto text-[11px] font-semibold text-[#6B4423] bg-[#F4B183]/25 hover:bg-[#F4B183]/35 border border-[#E7DDD2] px-3 py-1 rounded-full transition-colors flex items-center gap-1"
               >
-                <ChevronUp size={12} /> Tampilkan transkripsi
+                <ChevronUp size={12} /> Show transcript
               </motion.button>
             )}
           </AnimatePresence>
@@ -956,61 +987,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ canvasRef }) => {
           </AnimatePresence>
         </div>
 
-        {/* Right: Zoom Controls & History Controls */}
-        <div className="pointer-events-auto flex-1 hidden md:flex justify-end gap-3">
-           {/* Sleek History & Action Card */}
-           <motion.div
-             initial={{ opacity: 0, y: 20 }}
-             animate={{ opacity: 1, y: 0 }}
-             transition={{ duration: 0.5, delay: 0.05 }}
-             className="flex items-center gap-1 px-2.5 py-1.5 bg-[#FBF6F0]/95 backdrop-blur-xl rounded-full border border-[#E7DDD2] shadow-[0_12px_28px_rgba(63,42,29,0.06)]"
-           >
-             <button
-               onClick={() => undoCanvas()}
-               title="Undo"
-               className="w-9 h-9 flex items-center justify-center text-[#A08B7A] hover:text-[#6B4423] hover:bg-[#F6F0E8] rounded-xl transition-colors active:scale-90"
-             >
-               <Undo2 size={16} />
-             </button>
-             <button
-               onClick={() => redoCanvas()}
-               title="Redo"
-               className="w-9 h-9 flex items-center justify-center text-[#A08B7A] hover:text-[#6B4423] hover:bg-[#F6F0E8] rounded-xl transition-colors active:scale-90"
-             >
-               <Redo2 size={16} />
-             </button>
-             <div className="w-px h-5 bg-slate-200/80 mx-1.5" />
-             <button
-               onClick={handleDeleteSelection}
-               title="Delete selected"
-               className="w-9 h-9 flex items-center justify-center text-[#A08B7A] hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors active:scale-90"
-             >
-               <Trash2 size={16} />
-             </button>
-           </motion.div>
-
-           {/* Zoom Controls Card */}
-           <motion.div
-             initial={{ opacity: 0, y: 20 }}
-             animate={{ opacity: 1, y: 0 }}
-             transition={{ duration: 0.5, delay: 0.1 }}
-             className="flex items-center gap-1.5 px-3 py-2 bg-[#FBF6F0]/95 backdrop-blur-xl rounded-4xl shadow-[0_12px_28px_rgba(63,42,29,0.06)] border border-[#E7DDD2]"
-           >
-             <button onClick={() => handleZoom('out')} className="w-10 h-10 flex items-center justify-center text-[#A08B7A] hover:text-slate-800 hover:bg-slate-100 rounded-[1.1rem] transition-colors active:scale-95">
-               <Minus size={18} />
-             </button>
-             <span className="text-[13.5px] font-extrabold text-[#6B4423] min-w-14 text-center tracking-tight">
-                {Math.round(zoom * 100)}%
-             </span>
-             <button onClick={() => handleZoom('in')} className="w-10 h-10 flex items-center justify-center text-[#A08B7A] hover:text-slate-800 hover:bg-slate-100 rounded-[1.1rem] transition-colors active:scale-95">
-               <Plus size={18} />
-             </button>
-             <div className="w-0.5 h-5 bg-slate-200/80 mx-1.5 rounded-full" />
-             <button onClick={() => handleZoom('reset')} className="w-10 h-10 flex items-center justify-center text-[#8A7568] hover:text-[#3F2A1D] hover:bg-[#F3EBE3] rounded-[1.1rem] transition-colors active:scale-95" title="Fit to screen">
-               <Maximize size={18} />
-             </button>
-           </motion.div>
-        </div>
+        {/* Right: Empty for flex balance */}
+        <div className="flex-1 hidden md:block" />
 
         {/* Hidden Audio File Input for Audio Upload Transcribe */}
         <input

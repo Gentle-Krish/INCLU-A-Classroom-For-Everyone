@@ -1,3 +1,5 @@
+import { STANDARD_FONT_SIZES, resolveFontSize, StandardFontSize } from '../constants';
+
 /** Words the teacher asked the pen to write. Null when the sentence is not a pen request. */
 export function penLine(prompt: string): string | null {
   const match = prompt.trim().match(
@@ -56,4 +58,153 @@ export function equationLine(prompt: string): string | null {
 export function equationMarkdown(equation: string): string {
   const body = equation.replace(/\$/g, '').trim();
   return `## Equation\n\n$$${body}$$`;
+}
+
+export interface WriteTextIntentResult {
+  text: string;
+  fontSize: number;
+  sizeName: StandardFontSize | 'custom';
+}
+
+/**
+ * Detects requests for photorealistic artwork, complex paintings (e.g. Mona Lisa),
+ * or other capabilities outside an AI whiteboard's educational scope.
+ */
+export function isUnsupportedDrawingRequest(prompt: string): boolean {
+  const norm = prompt.trim().toLowerCase();
+  
+  const unsupportedPatterns = [
+    /\b(?:draw|paint|sketch|lukis|gambarkan|bikin\s+gambar)\s+(?:the\s+|sebuah\s+)?(?:mona\s*lisa|starry\s*night|guernica|the\s+scream|last\s+supper|girl\s+with\s+a\s+pearl\s+earring)\b/i,
+    /\b(?:draw|paint|sketch|lukis|gambarkan)\s+(?:a\s+)?(?:realistic|photorealistic|hyperrealistic|photo|portrait\s+of\s+a\s+person|human\s+face)\b/i,
+    /\b(?:generate|create|buat|bikin)\s+(?:a\s+)?(?:video|movie|3d\s+model|song|music|mp3|mp4)\b/i,
+  ];
+
+  return unsupportedPatterns.some(pattern => pattern.test(norm));
+}
+
+/**
+ * Parses user commands to write text on the whiteboard, supporting standard sizes
+ * ('small', 'medium', 'large') and custom pixel sizes (e.g. 'custom 56px', '56px').
+ */
+export function writeTextIntent(prompt: string): WriteTextIntentResult | null {
+  const trimmed = prompt.trim();
+  if (!trimmed) return null;
+
+  // Don't intercept pen handwriting or explicit equation requests
+  if (penLine(prompt) || equationLine(prompt)) return null;
+
+  // Check if prompt begins with or contains a command to write text on the board
+  const writeTrigger = /^(?:please\s+)?(?:write|tulis|tuliskan|type|put|add\s+text)\b/i;
+  if (!writeTrigger.test(trimmed)) return null;
+
+  // Avoid matching long-form composition requests (e.g. "write an essay", "write a story", "write a quiz")
+  if (/^(?:please\s+)?(?:write|tulis|tuliskan)\s+(?:an?|the|suatu|sebuah)\s+(?:essay|article|story|lesson|plan|quiz|question|code|program|script|summary|review|explanation)\b/i.test(trimmed)) {
+    return null;
+  }
+
+  // Remove leading write trigger and optional canvas/whiteboard destination references
+  let body = trimmed
+    .replace(writeTrigger, '')
+    .replace(/^\s*(?:on|to|in|pada|di)?\s*(?:the\s+)?(?:whiteboard|board|canvas|screen|layar|papan(?:\s+tulis)?)\s*[:,]?\s*/i, '')
+    .trim();
+
+  if (!body) return null;
+
+  // Strip trailing punctuation (e.g. '.', '!', '?') so it doesn't break regex suffix matching
+  let trailingPunctuation = '';
+  const punctMatch = body.match(/[.!?]+$/);
+  if (punctMatch) {
+    trailingPunctuation = punctMatch[0];
+    body = body.slice(0, -trailingPunctuation.length).trim();
+  }
+
+  let sizeName: StandardFontSize | 'custom' = 'medium';
+  let resolvedSize: number = STANDARD_FONT_SIZES.medium.whiteboardPx;
+
+  // Standard size keywords and synonyms:
+  // small / kecil / tiny / little
+  // large / besar / big / huge / giant
+  // medium / sedang / normal / regular
+  const sizeKeywords = 'small|medium|large|kecil|sedang|besar|big|huge|giant|tiny|little|normal|regular';
+
+  // 1. Check if size is specified at the START (prefix):
+  // e.g. "in large font: Hello Rahul", "in 56px: Hello Rahul", "large font Hello Rahul"
+  const prefixCustomPxRegex = /^(?:in|with|ukuran|font|dengan)?\s*(?:custom\s+)?(\d+)\s*px(?:\s*(?:font|size|ukuran|fotn))*\s*[:,\-]?\s*/i;
+  const prefixStandardRegex = new RegExp(`^(?:in|with|at|ukuran|dalam|dengan)?\\s*(${sizeKeywords})(?:\\s*(?:size|font|ukuran|fotn))*\\s*[:,\\-]?\\s*`, 'i');
+
+  // 2. Check if size is specified at the END (suffix):
+  // e.g. "Hello Rahul in large font", "Hello Rahul in custom 56px", "Hello Rahul 56px"
+  const suffixCustomPxRegex = /\s*(?:in|with|at|using|ukuran|font|size|dengan)?\s*(?:custom\s+)?(\d+)\s*px(?:\s*(?:font|size|ukuran|fotn))*$/i;
+  const suffixCustomPrefixRegex = /\s*(?:in|with|ukuran|font|dengan)\s+(?:custom\s+)(\d+)(?:\s*px)?(?:\s*(?:font|size|ukuran|fotn))*$/i;
+  const suffixStandardRegex = new RegExp(`\\s*(?:in|with|at|ukuran|dalam|dengan)?\\s*(${sizeKeywords})(?:\\s*(?:size|font|ukuran|fotn))*$`, 'i');
+
+  const resolveSizeKeyword = (keyword: string) => {
+    const raw = keyword.toLowerCase();
+    if (['small', 'kecil', 'tiny', 'little'].includes(raw)) {
+      sizeName = 'small';
+      resolvedSize = STANDARD_FONT_SIZES.small.whiteboardPx;
+    } else if (['large', 'besar', 'big', 'huge', 'giant'].includes(raw)) {
+      sizeName = 'large';
+      resolvedSize = STANDARD_FONT_SIZES.large.whiteboardPx;
+    } else {
+      sizeName = 'medium';
+      resolvedSize = STANDARD_FONT_SIZES.medium.whiteboardPx;
+    }
+  };
+
+  if (suffixCustomPrefixRegex.test(body)) {
+    const match = body.match(suffixCustomPrefixRegex);
+    if (match && match[1]) {
+      const px = parseInt(match[1], 10);
+      if (!isNaN(px) && px > 0) {
+        sizeName = 'custom';
+        resolvedSize = Math.max(8, Math.min(200, px));
+        body = body.replace(suffixCustomPrefixRegex, '').trim();
+      }
+    }
+  } else if (suffixCustomPxRegex.test(body)) {
+    const match = body.match(suffixCustomPxRegex);
+    if (match && match[1]) {
+      const px = parseInt(match[1], 10);
+      if (!isNaN(px) && px > 0) {
+        sizeName = 'custom';
+        resolvedSize = Math.max(8, Math.min(200, px));
+        body = body.replace(suffixCustomPxRegex, '').trim();
+      }
+    }
+  } else if (suffixStandardRegex.test(body)) {
+    const match = body.match(suffixStandardRegex);
+    if (match && match[1]) {
+      resolveSizeKeyword(match[1]);
+      body = body.replace(suffixStandardRegex, '').trim();
+    }
+  } else if (prefixCustomPxRegex.test(body)) {
+    const match = body.match(prefixCustomPxRegex);
+    if (match && match[1]) {
+      const px = parseInt(match[1], 10);
+      if (!isNaN(px) && px > 0) {
+        sizeName = 'custom';
+        resolvedSize = Math.max(8, Math.min(200, px));
+        body = body.replace(prefixCustomPxRegex, '').trim();
+      }
+    }
+  } else if (prefixStandardRegex.test(body)) {
+    const match = body.match(prefixStandardRegex);
+    if (match && match[1]) {
+      resolveSizeKeyword(match[1]);
+      body = body.replace(prefixStandardRegex, '').trim();
+    }
+  }
+
+  // Clean up any remaining quotes, colons, or dashes
+  body = body.replace(/^[:\-]\s*/, '').replace(/[:;,]+$/, '').trim();
+  body = body.replace(/^["'`]+|["'`]+$/g, '').trim();
+
+  if (!body) return null;
+
+  return {
+    text: body,
+    fontSize: resolvedSize,
+    sizeName,
+  };
 }

@@ -96,7 +96,7 @@ export async function executeMultiAgentPlan(params: OrchestratorParams): Promise
         undefined,
         'chalk-gemma:2b'
       );
-      return { success: true, res, agent: 'Chalk local model' };
+      return { success: true, res, agent: 'Inclu local model' };
     } catch (e: any) {
       logger.warn('[Multi-Agent] Visual worker failed, continuing...', e);
       return { success: false, error: e };
@@ -148,7 +148,7 @@ export async function executeMultiAgentPlan(params: OrchestratorParams): Promise
     for (const call of visualResult.res.functionCalls || []) {
       if (call.name === 'render_mermaid' && !existingCallNames.has('render_mermaid')) {
         // Resolve spatial position to prevent overlapping
-        const placement = findBestEmptyZone('CENTER', 600, 450, domElements, { width: viewport.width, height: viewport.height });
+        const placement = findBestEmptyZone('CENTER', 600, 450, domElements, { width: viewport?.width || 1920, height: viewport?.height || 1080 });
         call.args = call.args || {};
         call.args.gridPosition = placement.quadrant;
         aggregatedCalls.push(call);
@@ -161,7 +161,7 @@ export async function executeMultiAgentPlan(params: OrchestratorParams): Promise
   const resolvedCalls = aggregatedCalls.map((call, idx) => {
     if (call.name === 'add_component' || call.name === 'add_interactive_app') {
       const reqQuad: GridQuadrant = (call.args?.gridPosition as GridQuadrant) || (idx === 0 ? 'TOP_LEFT' : 'CENTER_RIGHT');
-      const placement = findBestEmptyZone(reqQuad, 500, 380, domElements, { width: viewport.width, height: viewport.height });
+      const placement = findBestEmptyZone(reqQuad, 500, 380, domElements, { width: viewport?.width || 1920, height: viewport?.height || 1080 });
       call.args = call.args || {};
       call.args.gridPosition = placement.quadrant;
     }

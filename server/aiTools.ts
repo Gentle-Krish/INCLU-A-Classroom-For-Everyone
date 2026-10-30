@@ -194,7 +194,7 @@ export const tools: FunctionDeclaration[] = [
   },
   {
     name: "add_text_label",
-    description: "Add standalone text on the canvas — titles, captions, annotations, headings.",
+    description: "Add standalone text on the canvas — titles, captions, annotations, headings. Supports standard font sizes (SMALL, MEDIUM, LARGE) or custom fontSize in pixels (e.g. 56px).",
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -210,8 +210,12 @@ export const tools: FunctionDeclaration[] = [
         },
         size: {
           type: Type.STRING,
-          enum: ["TITLE", "SUBTITLE", "BODY", "CAPTION"],
-          description: "Font size preset"
+          enum: ["SMALL", "MEDIUM", "LARGE", "TITLE", "SUBTITLE", "BODY", "CAPTION"],
+          description: "Standard font size preset: SMALL (18px), MEDIUM (28px), LARGE (48px)"
+        },
+        fontSize: {
+          type: Type.NUMBER,
+          description: "Custom font size in pixels (e.g. 56 for 56px)"
         }
       },
       required: ["text", "gridPosition"]
@@ -620,8 +624,8 @@ export const buildSystemInstruction = (
   },
   modelCapability?: ModelCapability
 ): string => {
-  const vw = viewport.width;
-  const vh = viewport.height;
+  const vw = viewport?.width || 1920;
+  const vh = viewport?.height || 1080;
 
   // Grid coordinate mapping
   const gridMap = {
@@ -698,7 +702,7 @@ ${lessonContext.completedSteps?.length
 
   if (!capability.supportsLessonEngine) {
     // SIMPLE MODE for constrained models — fewer rules, fewer tools mentioned
-    return `You are Chalk, a whiteboard assistant.
+    return `You are Inclu, a whiteboard assistant.
 
 CANVAS: ${vw}×${vh}px
 ${existingObjects}
@@ -713,7 +717,7 @@ RULES:
 Execute the request now.`;
   }
 
-  return `You are Chalk — an intelligent, continuous AI teaching assistant and smartboard copilot for educators worldwide.
+  return `You are Inclu — an intelligent, continuous AI teaching assistant and smartboard copilot for educators worldwide.
 
 ## CORE CONTINUITY PRINCIPLES (MANDATORY)
 1. **MULTI-TURN SESSION & WHITEBOARD AWARENESS**:
@@ -799,6 +803,7 @@ Generate quiz based on current lesson topic (not generic)
 | Comparison of 2-3 items | add_component → MARKDOWN_NOTE with table |
 | Long explanations & formulas | add_component → DOCUMENT_PAGE with the formula between $$ $$ so KaTeX draws it, and add_text_label with the same equation |
 | Handwriting, "use the pen" | write_with_pen with the words. Do not draw a rectangle instead |
+| Write text on whiteboard (custom or standard font size) | add_text_label with text, gridPosition, size ('SMALL', 'MEDIUM', 'LARGE') or custom fontSize (e.g. 56) |
 | Run or trace an algorithm | show_algorithm with one step per line, showing the data after each step |
 | A new blank whiteboard page | add_page |
 | Interactive practice questions | add_component → QUIZ_* . Write the question the way a teacher would say it |
@@ -859,6 +864,11 @@ When the user provides a long, detailed, or multi-step prompt:
 - Always end with what's available next OR a practical teaching tip
 - NEVER just say "Executing action"
 - Incremental vs Full Execution: For simple exploratory topics, build incrementally. But when the user explicitly provides a detailed multi-step prompt, syllabus, or comprehensive outline, execute the full requested scope immediately.
+
+## CAPABILITY BOUNDARIES & HANDLING UNSUPPORTED REQUESTS
+- If the user asks you to do something outside your capabilities (e.g. photorealistic paintings, drawing the Mona Lisa, realistic human portraits, video generation, or audio editing):
+  Politely and clearly explain: "Sorry, I currently cannot do that. As an AI whiteboard assistant, I can create educational diagrams, concept mindmaps, geometric shapes, math function graphs, notes, and write text on the whiteboard."
+  Do NOT attempt to hallucinate non-existent tools or generate corrupted markup for impossible artistic requests.
 
 ## CONSTRAINTS
 - Max ${capability.maxToolCallsPerRequest} tool calls per response

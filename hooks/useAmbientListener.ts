@@ -1,15 +1,15 @@
 /**
- * Chalk Hands-Free Ambient Classroom Listener Hook
+ * Inclu Hands-Free Ambient Classroom Listener Hook
  * Enables hands-free ambient classroom voice interaction for teachers (Pak Damar Standard).
  * Supports zero-touch spoken commands:
- *  - "Chalk, buka timer 5 menit"
- *  - "Chalk, presensi siswa"
- *  - "Chalk, acak giliran" (Spin wheel)
- *  - "Chalk, buka kalkulator"
- *  - "Chalk, buat kuis"
- *  - "Chalk, pusatkan layar"
- *  - "Chalk, bersihkan papan"
- *  - "Chalk, buat peta konsep [topik]"
+ *  - "Inclu, buka timer 5 menit"
+ *  - "Inclu, presensi siswa"
+ *  - "Inclu, acak giliran" (Spin wheel)
+ *  - "Inclu, buka kalkulator"
+ *  - "Inclu, buat kuis"
+ *  - "Inclu, pusatkan layar"
+ *  - "Inclu, bersihkan papan"
+ *  - "Inclu, buat peta konsep [topik]"
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -61,7 +61,8 @@ export function matchAndExecuteHandsFreeCommand(rawText: string): HandsFreeComma
     }
     sounds.play('success');
     toast.success(`⏱️ Hands-free: ${minutes}-minute timer is on the board.`);
-    return { matched: true, action: 'TIMER', detail: `${minutes} minutes` };
+    const unitLabel = clean.includes('menit') || clean.includes('mnt') ? 'menit' : 'minutes';
+    return { matched: true, action: 'TIMER', detail: `${minutes} ${unitLabel}` };
   }
 
   // 2. Attendance / Presensi: "buka absen", "presensi siswa", "absensi"

@@ -102,7 +102,7 @@ export const AgentCursor: React.FC = () => {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-600 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600"></span>
               </span>
-              Chalk is responding
+              Inclu is responding
               <ChevronDown size={16} className="ml-auto group-open:rotate-180 transition-transform" />
             </summary>
             <div className="px-3 pb-3 pt-1 text-xs font-medium text-slate-800 border-t border-slate-100 max-h-[300px] overflow-y-auto whitespace-pre-wrap">
