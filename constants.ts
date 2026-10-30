@@ -1,9 +1,9 @@
 export const GEMINI_MODEL = 'gemini-3.8-flash';
 /** Strong Gemma used when the teacher has a Gemini API key. Not the E2B offline model. */
 export const STRONG_GEMMA_MODEL = 'gemma-4-31b-it';
-export const OLLAMA_MODEL = 'chalk-model:latest';
-/** The only model tag Chalk may download. Modelfile: scripts/Modelfile.chalk-gemma (FROM gemma4:e2b). */
-export const CHALK_LOCAL_DOWNLOAD_MODEL = 'chalk-gemma:2b';
+export const OLLAMA_MODEL = 'inclu-gemma:2b';
+/** The model tag Inclu uses. Modelfile: scripts/Modelfile.inclu-gemma (FROM gemma4:e2b). */
+export const CHALK_LOCAL_DOWNLOAD_MODEL = 'inclu-gemma:2b';
 /** Base weight named in that Modelfile. Already-local copies must not be pulled again. */
 export const CHALK_LOCAL_BASE_MODEL = 'gemma4:e2b';
 export const OLLAMA_THINKING_MODE = 'nothink';

@@ -22,7 +22,7 @@ class JoinTarget {
   int get hashCode => Object.hash(host, port, room);
 }
 
-/// Parses `chalk://join?host=&port=&room=`. Http and https are refused.
+/// Parses `inclu://join?host=&port=&room=` or `chalk://join?host=&port=&room=`. Http and https are refused.
 JoinTarget? parseChalkJoin(String raw) {
   final text = raw.trim();
   if (text.isEmpty) return null;
@@ -30,7 +30,9 @@ JoinTarget? parseChalkJoin(String raw) {
   if (lower.startsWith('http://') || lower.startsWith('https://')) return null;
 
   final uri = Uri.tryParse(text);
-  if (uri == null || uri.scheme.toLowerCase() != 'chalk') return null;
+  if (uri == null) return null;
+  final scheme = uri.scheme.toLowerCase();
+  if (scheme != 'chalk' && scheme != 'inclu') return null;
   if (uri.host.toLowerCase() != 'join') return null;
 
   final room = (uri.queryParameters['room'] ?? uri.queryParameters['code'] ?? '')
@@ -67,7 +69,7 @@ JoinTarget? mergeJoinTarget({Uri? uri, String? code}) {
   if (uri != null) {
     final scheme = uri.scheme.toLowerCase();
     if (scheme == 'http' || scheme == 'https') return null;
-    if (scheme == 'chalk') {
+    if (scheme == 'chalk' || scheme == 'inclu') {
       final parsed = parseChalkJoin(uri.toString());
       if (parsed != null) return parsed;
     }

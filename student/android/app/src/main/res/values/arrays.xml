@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string-array name="join_class_queries">
-        <item>join my class number {code} on Chalk</item>
-        <item>join class {code} on Chalk</item>
+        <item>join my class number {code} on Inclu</item>
+        <item>join class {code} on Inclu</item>
     </string-array>
 </resources>

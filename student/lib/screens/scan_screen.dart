@@ -78,7 +78,7 @@ class _ScanScreenState extends State<ScanScreen> {
                   child: Padding(
                     padding: EdgeInsets.symmetric(horizontal: 18, vertical: 14),
                     child: Text(
-                      'That code is not a Chalk class.',
+                      'That code is not an Inclu class.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: ChalkColors.ink,

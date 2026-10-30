@@ -237,7 +237,7 @@ const getInitialSelectedGeminiModel = (): string => {
 const getInitialSelectedOllamaModel = (): string => {
   if (typeof window === 'undefined') return CHALK_LOCAL_DOWNLOAD_MODEL;
   const saved = localStorage.getItem('selected_ollama_model');
-  if (!saved || /Chalk/i.test(saved) || saved === OLLAMA_MODEL || saved === 'chalk-model:latest' || saved === 'gemma:2b' || saved === 'gemma2:2b' || saved === 'gemma4:e2b' || saved === 'qwen2.5:7b') {
+  if (!saved || /Chalk|Inclu/i.test(saved) || saved === OLLAMA_MODEL || saved === 'inclu-gemma:2b' || saved === 'chalk-model:latest' || saved === 'chalk-gemma:2b' || saved === 'gemma:2b' || saved === 'gemma2:2b' || saved === 'gemma4:e2b' || saved === 'qwen2.5:7b') {
     return CHALK_LOCAL_DOWNLOAD_MODEL;
   }
   return saved;

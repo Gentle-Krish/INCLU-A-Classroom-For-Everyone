@@ -9,7 +9,7 @@
     <uses-feature android:name="android.hardware.microphone" android:required="false"/>
 
     <application
-        android:label="Chalk"
+        android:label="Inclu"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:largeHeap="true"
@@ -42,6 +42,7 @@
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="inclu" android:host="join"/>
                 <data android:scheme="chalk" android:host="join"/>
             </intent-filter>
         </activity>

@@ -147,7 +147,7 @@ export function buildJoinQrValue(host: string, port: number | string, room: stri
   if (!/^\d{4}$/.test(room)) {
     throw new Error('Join room must be four digits');
   }
-  const value = `chalk://join?host=${host}&port=${portNum}&room=${room}`;
+  const value = `inclu://join?host=${host}&port=${portNum}&room=${room}`;
   if (/https?:/i.test(value)) {
     throw new Error('Join QR must not be an http link');
   }

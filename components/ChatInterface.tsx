@@ -100,10 +100,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ canvasRef }) => {
   const liveAiStatus = useAiStatus();
   const isOfflineMode = aiPreference === 'ollama' || liveAiStatus.mode === 'ollama';
   const activeModelDisplay = isOfflineMode
-    ? ((selectedOllamaModel || (liveAiStatus.mode === 'ollama' ? liveAiStatus.model : 'chalk-gemma:2b') || 'chalk-gemma:2b') === 'chalk-gemma:2b'
-        || /gemma|Chalk|chalk-model/i.test(selectedOllamaModel || liveAiStatus.model || '')
+    ? ((selectedOllamaModel || (liveAiStatus.mode === 'ollama' ? liveAiStatus.model : 'inclu-gemma:2b') || 'inclu-gemma:2b') === 'inclu-gemma:2b'
+        || /gemma|Chalk|Inclu|chalk-model/i.test(selectedOllamaModel || liveAiStatus.model || '')
           ? 'Inclu local model'
-          : (selectedOllamaModel || (liveAiStatus.mode === 'ollama' ? liveAiStatus.model : 'chalk-gemma:2b') || 'chalk-gemma:2b'))
+          : (selectedOllamaModel || (liveAiStatus.mode === 'ollama' ? liveAiStatus.model : 'inclu-gemma:2b') || 'inclu-gemma:2b'))
     : (aiPreference === 'vertex' || liveAiStatus.mode === 'vertex')
     ? (selectedVertexModel || 'Vertex AI')
     : (selectedGeminiModel || 'Gemini Cloud');

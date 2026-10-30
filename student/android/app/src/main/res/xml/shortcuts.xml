@@ -6,9 +6,9 @@
         app:queryPatterns="@array/join_class_queries">
         <intent
             android:action="android.intent.action.VIEW"
-            android:targetPackage="app.chalk.chalk_student"
+            android:targetPackage="app.inclu.inclu_student"
             android:targetClass="app.chalk.chalk_student.MainActivity">
-            <url-template android:value="chalk://join?room={code}" />
+            <url-template android:value="inclu://join?room={code}" />
             <parameter
                 android:name="code"
                 android:key="code"

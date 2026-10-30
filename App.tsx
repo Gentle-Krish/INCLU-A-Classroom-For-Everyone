@@ -145,8 +145,8 @@ const App: React.FC = () => {
 
     // 1. Explicit Ollama mode OR browser is offline but local Ollama is ready
     if (isUsingOllama || (!isBrowserOnline && aiStatus.ollamaStatus?.online && aiStatus.ollamaStatus?.hasModel)) {
-      const activeModel = storeState.selectedOllamaModel || aiStatus.ollamaStatus?.activeModel || aiStatus.model || 'chalk-gemma:2b';
-      const shownModel = /Chalk|gemma|chalk-model/i.test(activeModel) ? 'Chalk local model' : activeModel;
+      const activeModel = storeState.selectedOllamaModel || aiStatus.ollamaStatus?.activeModel || aiStatus.model || 'inclu-gemma:2b';
+      const shownModel = /Chalk|Inclu|gemma|chalk-model/i.test(activeModel) ? 'Inclu local model' : activeModel;
       return {
         mode: 'ollama' as const,
         text: !isBrowserOnline ? 'Offline mode (Ollama active)' : t('modeLuring', 'Offline mode (Ollama)'),
