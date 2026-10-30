@@ -1,0 +1,424 @@
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import remarkGfm from 'remark-gfm';
+import { Copy, Check, Volume2, VolumeX, Sparkles, User, Terminal, ThumbsUp, ThumbsDown, Zap, Pin } from 'lucide-react';
+import { ChatMessage } from '../types';
+import { toast } from '../utils/toast';
+import { submitLogFeedback } from '../services/aiService';
+import { useStore } from '../store';
+import { useTranslation } from '../utils/translations';
+import gsap from 'gsap';
+
+interface ChatMessageItemProps {
+  message: ChatMessage;
+  isLatest: boolean;
+  isThinking: boolean;
+}
+
+export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
+  message,
+  isLatest,
+  isThinking
+}) => {
+  const { t, language } = useTranslation();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isModel = message.role === 'model';
+  const [copied, setCopied] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [rated, setRated] = useState<'good' | 'bad' | null>(null);
+
+  // GSAP Smooth Entrance Animation
+  useEffect(() => {
+    if (containerRef.current) {
+      gsap.fromTo(
+        containerRef.current,
+        {
+          opacity: 0,
+          y: isModel ? 14 : 10,
+          scale: 0.96,
+        },
+        {
+          opacity: 1,
+          y: 0,
+          scale: 1,
+          duration: 0.4,
+          ease: 'power2.out',
+        }
+      );
+    }
+  }, []);
+
+  const aiPref = useStore(state => state.aiPreference);
+  const selOllama = useStore(state => state.selectedOllamaModel);
+  const selGemini = useStore(state => state.selectedGeminiModel);
+  const selVertex = useStore(state => state.selectedVertexModel);
+
+  const displayModel = useMemo(() => {
+    if (message.model) return message.model;
+    if (aiPref === 'ollama') return selOllama || 'gemma4:e2b';
+    if (aiPref === 'vertex') return selVertex || 'gemini-3.8-flash';
+    return selGemini || 'gemini-3.8-flash';
+  }, [message.model, aiPref, selOllama, selGemini, selVertex]);
+  
+  // Real-time typewriter streaming state
+  const [displayedLength, setDisplayedLength] = useState<number>(() => {
+    // If not the latest message or not from model, display immediately
+    return !isModel || !isLatest ? message.text.length : 0;
+  });
+  const [isStreaming, setIsStreaming] = useState<boolean>(() => {
+    return isModel && isLatest && message.text.length > 0;
+  });
+  const fullText = message.text || '';
+  const animFrameRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!isModel || !isLatest) {
+      setDisplayedLength(fullText.length);
+      setIsStreaming(false);
+      return;
+    }
+
+    // If message text updated while streaming or brand new
+    let currentIdx = 0;
+    setIsStreaming(true);
+
+    const step = () => {
+      // Stream in fast chunks (4-8 chars per frame for ultra-fast, responsive feel)
+      currentIdx = Math.min(currentIdx + 6, fullText.length);
+      setDisplayedLength(currentIdx);
+
+      if (currentIdx < fullText.length) {
+        animFrameRef.current = requestAnimationFrame(step);
+      } else {
+        setIsStreaming(false);
+      }
+    };
+
+    animFrameRef.current = requestAnimationFrame(step);
+
+    return () => {
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    };
+  }, [fullText, isModel, isLatest]);
+
+  const displayedText = useMemo(() => {
+    if (!isModel) return fullText;
+    if (!isStreaming) return fullText;
+    return fullText.slice(0, displayedLength);
+  }, [fullText, displayedLength, isModel, isStreaming]);
+
+  const handleSkipStream = () => {
+    if (isStreaming) {
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+      setDisplayedLength(fullText.length);
+      setIsStreaming(false);
+    }
+  };
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(fullText);
+      setCopied(true);
+      toast.success('Message copied to the clipboard');
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error('Could not copy the message');
+    }
+  };
+
+  const handlePinToBoard = () => {
+    try {
+      const zoom = useStore.getState().zoom || 1;
+      const vpt = useStore.getState().viewportTransform || [1, 0, 0, 1, 0, 0];
+      const centerX = Math.round((-vpt[4] + (typeof window !== 'undefined' ? window.innerWidth / 2 : 960)) / zoom);
+      const centerY = Math.round((-vpt[5] + (typeof window !== 'undefined' ? window.innerHeight / 2 : 540)) / zoom);
+
+      const id = `ai_note_${Date.now()}`;
+      const titleSnippet = fullText.slice(0, 32).replace(/[#*`_~]/g, '').trim();
+
+      useStore.getState().updateDomElement(id, {
+        id,
+        html: '<div>AI note</div>',
+        componentType: 'DOCUMENT_PAGE',
+        config: {
+          title: `📌 AI note: ${titleSnippet || 'Short explanation'}`,
+          markdown: fullText,
+          model: displayModel
+        },
+        x: centerX,
+        y: centerY,
+        width: 520,
+        height: 420,
+        scaleX: 1,
+        scaleY: 1,
+        rotation: 0,
+        zIndex: 20
+      });
+
+      const event = new CustomEvent('addCanvasPlaceholder', { detail: { id, x: centerX, y: centerY, width: 520, height: 420 } });
+      window.dispatchEvent(event);
+
+      toast.success('📌 AI reply pinned to the whiteboard.');
+    } catch {
+      toast.error('Could not pin the reply to the board');
+    }
+  };
+
+  const handleSpeakToggle = () => {
+    if (!('speechSynthesis' in window)) {
+      toast.error('Text-to-speech is not supported in this browser.');
+      return;
+    }
+
+    if (isSpeaking) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    // Clean markdown symbols for cleaner TTS voice
+    const cleanText = fullText
+      .replace(/[*#`_~\[\]]/g, '')
+      .replace(/https?:\/\/\S+/g, '')
+      .trim();
+
+    if (!cleanText) return;
+
+    const langLocaleMap: Record<string, string> = {
+      id: 'id-ID', en: 'en-US', ar: 'ar-SA', zh: 'zh-CN', fr: 'fr-FR',
+      ru: 'ru-RU', es: 'es-ES', ja: 'ja-JP', ko: 'ko-KR', de: 'de-DE', pt: 'pt-BR'
+    };
+    const targetLocale = langLocaleMap[language] || 'id-ID';
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.lang = targetLocale;
+    utterance.rate = 1.05;
+
+    // Pick matching language voice if available
+    const voices = window.speechSynthesis.getVoices();
+    const matchedVoice = voices.find(v => v.lang.toLowerCase().startsWith(language.toLowerCase()));
+    if (matchedVoice) utterance.voice = matchedVoice;
+
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+
+    window.speechSynthesis.speak(utterance);
+    setIsSpeaking(true);
+  };
+
+  if (!isModel) {
+    return (
+      <div ref={containerRef} className="flex flex-col items-end group w-full will-change-transform">
+        <div className="flex items-center gap-1.5 mb-1 mr-1">
+          <span className="text-[11px] font-semibold text-[#A08B7A]">{t('you', 'You')}</span>
+          <div className="w-5 h-5 rounded-full bg-[#F4B183] flex items-center justify-center text-[#3F2A1D]">
+            <User size={12} />
+          </div>
+        </div>
+        <div className="bg-[#6B4423] text-[#FFF6EE] rounded-3xl rounded-tr-sm px-5 py-3.5 max-w-[88%] text-[14.5px] font-medium leading-relaxed shadow-md shadow-[#6B4423]/15 select-text">
+          {fullText}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div ref={containerRef} className="flex flex-col items-start group w-full will-change-transform" onClick={handleSkipStream}>
+      <div className="flex items-center justify-between w-full mb-1 ml-1 px-1">
+        <div className="flex items-center gap-1.5">
+          <div className="w-5 h-5 rounded-md bg-[#F4B183] flex items-center justify-center p-0.5 shadow-2xs">
+            <svg viewBox="0 0 24 24" className="w-3 h-3" fill="none">
+              <path d="M7 4.5v15l4.2-4.1 2.9 5.1 2.4-1.3-2.9-5H19L7 4.5Z" fill="#3F2A1D" stroke="#3F2A1D" strokeWidth="1.2" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <span className="text-[11px] font-bold text-[#3F2A1D]">{t('assistant', 'Asisten')}</span>
+          {message.tokens && (
+            <span className="text-[10px] font-mono text-slate-400 flex items-center gap-0.5" title={`Model: ${/gemma/i.test(displayModel) ? 'Local model' : displayModel}`}>
+              <Zap size={10} className="text-amber-500" /> {message.tokens} tok
+              {message.latencyMs && ` • ${(message.latencyMs / 1000).toFixed(1)}s`}
+            </span>
+          )}
+          {isStreaming && (
+            <span className="text-[10px] text-emerald-600 font-semibold animate-pulse flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> realtime
+            </span>
+          )}
+        </div>
+
+        {/* Action icons */}
+        <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
+          {message.telemetryId && (
+            <div className="flex items-center gap-0.5 mr-1 border-r border-slate-200 pr-1.5">
+              <button
+                type="button"
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  setRated('good');
+                  await submitLogFeedback(message.telemetryId!, 'good');
+                  toast.success('Positive feedback saved to Google Cloud / Sheets.');
+                }}
+                className={`p-1 rounded-lg transition-colors ${
+                  rated === 'good' ? 'bg-emerald-100 text-emerald-700' : 'text-slate-400 hover:text-emerald-600 hover:bg-slate-100'
+                }`}
+                title="Helpful"
+              >
+                <ThumbsUp size={12} />
+              </button>
+              <button
+                type="button"
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  setRated('bad');
+                  await submitLogFeedback(message.telemetryId!, 'bad');
+                  toast.success('Feedback saved for review.');
+                }}
+                className={`p-1 rounded-lg transition-colors ${
+                  rated === 'bad' ? 'bg-rose-100 text-rose-700' : 'text-slate-400 hover:text-rose-600 hover:bg-slate-100'
+                }`}
+                title="Needs improvement"
+              >
+                <ThumbsDown size={12} />
+              </button>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleSpeakToggle();
+            }}
+            title={isSpeaking ? "Stop speech" : "Read aloud"}
+            className={`p-1 rounded-lg transition-colors ${isSpeaking ? 'bg-[#F4B183]/50 text-[#3F2A1D]' : 'text-[#A08B7A] hover:text-[#3F2A1D] hover:bg-[#F6F0E8]'}`}
+          >
+            {isSpeaking ? <VolumeX size={13} /> : <Volume2 size={13} />}
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleCopy();
+            }}
+            title="Copy markdown"
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+          >
+            {copied ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+          </button>
+
+          {/* Grab / Pin AI Output to Board */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handlePinToBoard();
+            }}
+            title="Pin this reply on the whiteboard"
+            className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-[#F4B183]/40 hover:bg-[#6B4423] text-[#3F2A1D] hover:text-[#FFF6EE] transition-all cursor-pointer"
+          >
+            <Pin size={11} className="rotate-45" />
+            <span className="hidden sm:inline">Pin to board</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-[#FBF6F0] text-[#3F2A1D] border border-[#E7DDD2] shadow-[0_4px_24px_rgba(63,42,29,0.05)] rounded-3xl rounded-tl-sm p-4 lg:p-5 max-w-[95%] w-full overflow-hidden transition-all select-text">
+        <div className="chat-markdown prose prose-slate max-w-none text-[14.5px] leading-relaxed">
+          <ReactMarkdown
+            remarkPlugins={[remarkMath, remarkGfm]}
+            rehypePlugins={[rehypeKatex]}
+            components={{
+              h1: ({ node, ...props }) => (
+                <h1 className="text-lg font-black text-[#3F2A1D] mt-2 mb-2 pb-1 border-b border-[#E7DDD2]" {...props} />
+              ),
+              h2: ({ node, ...props }) => (
+                <h2 className="text-base font-bold text-[#3F2A1D] mt-2 mb-1.5" {...props} />
+              ),
+              h3: ({ node, ...props }) => (
+                <h3 className="text-[15px] font-bold text-[#3F2A1D] mt-1.5 mb-1" {...props} />
+              ),
+              p: ({ node, ...props }) => (
+                <p className="mb-2 last:mb-0 leading-relaxed text-[#3F2A1D]" {...props} />
+              ),
+              ul: ({ node, ...props }) => (
+                <ul className="list-disc list-outside pl-5 my-2 space-y-1 text-[#3F2A1D]" {...props} />
+              ),
+              ol: ({ node, ...props }) => (
+                <ol className="list-decimal list-outside pl-5 my-2 space-y-1 text-[#3F2A1D]" {...props} />
+              ),
+              li: ({ node, ...props }) => (
+                <li className="leading-relaxed" {...props} />
+              ),
+              blockquote: ({ node, ...props }) => (
+                <blockquote className="border-l-4 border-[#F4B183] bg-[#FFF6EE] pl-3 py-1 my-2 italic text-[#6B4423] rounded-r-lg" {...props} />
+              ),
+              table: ({ node, ...props }) => (
+                <div className="my-3 overflow-x-auto rounded-xl border border-slate-200 shadow-xs">
+                  <table className="w-full text-xs text-left" {...props} />
+                </div>
+              ),
+              thead: ({ node, ...props }) => (
+                <thead className="bg-slate-50 text-slate-700 border-b border-slate-200 font-bold" {...props} />
+              ),
+              th: ({ node, ...props }) => (
+                <th className="px-3 py-2 uppercase tracking-wider text-[11px]" {...props} />
+              ),
+              td: ({ node, ...props }) => (
+                <td className="px-3 py-2 border-b border-slate-100 last:border-0" {...props} />
+              ),
+              code: ({ node, inline, className, children, ...props }: any) => {
+                const isInline = inline || (!className && !String(children).includes('\n'));
+                if (isInline) {
+                  return (
+                    <code className="bg-[#F6F0E8] text-[#6B4423] px-1.5 py-0.5 rounded-md font-mono text-[13px] font-semibold border border-[#E7DDD2]" {...props}>
+                      {children}
+                    </code>
+                  );
+                }
+                const match = /language-(\w+)/.exec(className || '');
+                const lang = match ? match[1] : '';
+                return (
+                  <div className="my-3 rounded-2xl overflow-hidden bg-slate-900 border border-slate-800 shadow-md">
+                    <div className="flex items-center justify-between px-3.5 py-1.5 bg-slate-800/80 border-b border-slate-700/60 text-slate-400 text-[11px] font-mono">
+                      <div className="flex items-center gap-1.5">
+                        <Terminal size={12} className="text-[#FFE08A]" />
+                        <span>{lang || 'code'}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigator.clipboard.writeText(String(children).replace(/\n$/, ''));
+                          toast.success('Code copied.');
+                        }}
+                        className="flex items-center gap-1 hover:text-white transition-colors cursor-pointer px-1.5 py-0.5 rounded bg-slate-700/60 hover:bg-slate-700 text-[10px]"
+                      >
+                        <Copy size={11} /> Copy
+                      </button>
+                    </div>
+                    <pre className="p-3.5 overflow-x-auto text-xs font-mono text-[#FFE08A] leading-relaxed">
+                      <code className={className} {...props}>
+                        {children}
+                      </code>
+                    </pre>
+                  </div>
+                );
+              },
+              a: ({ node, ...props }) => (
+                <a className="text-[#6B4423] hover:text-[#3F2A1D] underline font-semibold" target="_blank" rel="noopener noreferrer" {...props} />
+              ),
+              strong: ({ node, ...props }) => (
+                <strong className="font-bold text-[#3F2A1D]" {...props} />
+              )
+            }}
+          >
+            {displayedText || (isStreaming ? '▋' : '*Pesan kosong*')}
+          </ReactMarkdown>
+          {isStreaming && (
+            <span className="inline-block w-2 h-4 ml-0.5 bg-[#6B4423] rounded-xs animate-pulse align-middle" />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};

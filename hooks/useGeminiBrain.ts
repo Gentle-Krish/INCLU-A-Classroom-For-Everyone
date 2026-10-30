@@ -1,0 +1,1369 @@
+import React, { useCallback } from 'react';
+import { useStore } from '../store';
+import { AiServiceError, generateAgentActions } from '../services/aiService';
+import { Point, CanvasObjectData, AgentAction, LessonPlan } from '../types';
+import { CALCULATOR_TEMPLATE, TIMER_TEMPLATE } from '../services/componentTemplates';
+import { createLogger } from '../utils/logger';
+import { sounds } from '../utils/sounds';
+import { layoutMindmap, expandMindmapNodes, findMatchingMindmapNode, NODE_STYLE_CONFIG, MindmapInputNode, MindmapLayoutNode } from '../utils/mindmapLayout';
+import { sanitizeMermaidCode, cleanMermaidNodeLabel } from '../utils/mermaidSanitizer';
+import { isQuestCommand } from '../utils/questSchema';
+import { algorithmLesson } from '../utils/algorithmTrace';
+import { equationLine, equationMarkdown, isNewPageRequest, penFontSize, penLine } from '../utils/boardIntent';
+import { visiblePageFrame } from '../utils/boardScroll';
+
+const logger = createLogger('gemini-brain');
+
+// Global request lock to prevent overlapping calls across instances
+let isProcessingGlobal = false;
+
+// ============================================================================
+// SYNTHESIZED FALLBACK TEXT (tidak bergantung pada model)
+// ============================================================================
+const synthesizeFallbackResponse = (
+  functionCalls: any[],
+  lessonPlan: LessonPlan | null
+): string => {
+  if (functionCalls.length === 0) {
+    return 'Sure, how can I help you today?';
+  }
+
+  const toolNames = functionCalls.map(c => c.name);
+  const mindmapCount = functionCalls.filter(c => c.name === 'add_mindmap_node').length;
+  const hasQuiz = functionCalls.some(c => 
+    c.name === 'add_component' && 
+    String(c.args?.componentType || '').startsWith('QUIZ')
+  );
+  const hasDocument = functionCalls.some(c => 
+    c.name === 'add_component' && 
+    ['DOCUMENT_PAGE', 'MARKDOWN_NOTE'].includes(c.args?.componentType)
+  );
+  const hasApp = toolNames.includes('add_interactive_app');
+  const topic = lessonPlan?.topic || '';
+
+  if (mindmapCount > 0) {
+    return `Concept map${topic ? ` on ${topic}` : ''} has been ${mindmapCount > 3 ? 'created' : 'updated'} with ${mindmapCount} elements. Type "continue" for the next topic, or ask for more details on a specific section.`;
+  }
+  if (hasQuiz) {
+    return `Practice quiz${topic ? ` on ${topic}` : ''} is ready on the board! Give students time to work on it, then review together.`;
+  }
+  if (hasDocument) {
+    return `Lesson material${topic ? ` on ${topic}` : ''} is ready on the board. Would you like me to add a quiz for practice?`;
+  }
+  if (hasApp) {
+    return 'Interactive app has been added to the board. Click to explore together with students.';
+  }
+  return 'Completed on the board!';
+};
+
+// ============================================================================
+// JEV SYSTEM 1 REFLEX CLASSIFIER (<15ms INSTANT DECISION ENGINE)
+// ============================================================================
+export interface JevReflexResult {
+  handled: boolean;
+  message?: string;
+  actionTaken?: string;
+  lockIntent?: 'modification' | 'creation' | 'question';
+  targetObjectId?: string;
+  /** Handwriting or an equation placed directly on the canvas. */
+  canvasText?: { text: string; fontFamily?: string };
+  /** A lesson card, used for equations, pen pages, and algorithm traces. */
+  lessonDocument?: { title: string; markdown: string; handwriting?: boolean };
+}
+
+/**
+ * Normalizes Indonesian and English spoken number words into digits
+ * so Voice Mode transcripts ("sepuluh menit", "lima belas soal") match numeric rules.
+ */
+export function normalizeSpokenNumbers(input: string): string {
+  const multiWordMap: Array<[RegExp, string]> = [
+    [/\bdua\s+puluh\s+lima\b/gi, '25'],
+    [/\btiga\s+puluh\s+lima\b/gi, '35'],
+    [/\bempat\s+puluh\s+lima\b/gi, '45'],
+    [/\blima\s+belas\b/gi, '15'],
+    [/\bdua\s+belas\b/gi, '12'],
+    [/\btiga\s+belas\b/gi, '13'],
+    [/\bempat\s+belas\b/gi, '14'],
+    [/\benam\s+belas\b/gi, '16'],
+    [/\btujuh\s+belas\b/gi, '17'],
+    [/\bdelapan\s+belas\b/gi, '18'],
+    [/\bsembilan\s+belas\b/gi, '19'],
+    [/\bdua\s+puluh\b/gi, '20'],
+    [/\btiga\s+puluh\b/gi, '30'],
+    [/\bempat\s+puluh\b/gi, '40'],
+    [/\blima\s+puluh\b/gi, '50'],
+    [/\benam\s+puluh\b/gi, '60'],
+    [/\btwenty[\s-]+five\b/gi, '25'],
+  ];
+  const singleWordMap: Array<[RegExp, string]> = [
+    [/\bsebelas\b/gi, '11'],
+    [/\bsepuluh\b/gi, '10'],
+    [/\bsembilan\b/gi, '9'],
+    [/\bdelapan\b/gi, '8'],
+    [/\btujuh\b/gi, '7'],
+    [/\benam\b/gi, '6'],
+    [/\blima\b/gi, '5'],
+    [/\bempat\b/gi, '4'],
+    [/\btiga\b/gi, '3'],
+    [/\bdua\b/gi, '2'],
+    [/\bsatu\b/gi, '1'],
+    [/\bthirty\b/gi, '30'],
+    [/\btwenty\b/gi, '20'],
+    [/\bfifteen\b/gi, '15'],
+    [/\bten\b/gi, '10'],
+    [/\bfive\b/gi, '5'],
+    [/\bfour\b/gi, '4'],
+    [/\bthree\b/gi, '3'],
+    [/\btwo\b/gi, '2'],
+    [/\bone\b/gi, '1'],
+  ];
+  let out = input;
+  for (const [pattern, replacement] of multiWordMap) {
+    out = out.replace(pattern, replacement);
+  }
+  for (const [pattern, replacement] of singleWordMap) {
+    out = out.replace(pattern, replacement);
+  }
+  return out;
+}
+
+/**
+ * Strips polite/conversational prefixes and wake words so both Voice Mode and Chat Mode
+ * match reflex and intent rules accurately.
+ */
+export function stripConversationalPrefix(input: string): string {
+  return input
+    .trim()
+    .replace(/^(?:(?:hai|halo|hey|ok|oke|permisi|pak|bu)\s+)?(?:Chalk[,.!?\s]+)?(?:(?:tolong|coba|bisa|mohon|please|can\s+you|could\s+you|bantu(?:\s+saya)?)\s+)+/i, '')
+    .replace(/^(?:hai|halo|hey|ok|oke)\s+Chalk[,.!?\s]*/i, '')
+    .replace(/^Chalk[,.!?\s]+/i, '')
+    .trim();
+}
+
+export function evaluateJevSystemOne(
+  prompt: string,
+  storeState: any,
+  canvas: any
+): JevReflexResult {
+  const rawNorm = normalizeSpokenNumbers(prompt.toLowerCase().trim());
+  const norm = stripConversationalPrefix(rawNorm);
+
+  const traced = algorithmLesson(prompt);
+  if (traced) {
+    return {
+      handled: true,
+      actionTaken: 'SHOW_ALGORITHM',
+      message: `${traced.title} is on the board, one step at a time.`,
+      lessonDocument: traced,
+    };
+  }
+  const equation = equationLine(prompt);
+  if (equation) {
+    return {
+      handled: true,
+      actionTaken: 'WRITE_EQUATION',
+      message: 'The equation is on the board.',
+      canvasText: { text: equation, fontFamily: 'Cambria, "Times New Roman", serif' },
+      lessonDocument: { title: 'Equation', markdown: equationMarkdown(equation) },
+    };
+  }
+  const pen = penLine(prompt);
+  if (pen) {
+    return {
+      handled: true,
+      actionTaken: 'WRITE_WITH_PEN',
+      message: 'Written with the pen. Scroll the page to read it.',
+      lessonDocument: { title: 'Written with the pen', markdown: pen, handwriting: true },
+    };
+  }
+  if (/^(?:open|show|start|use)\s+(?:the\s+)?quiz\b/i.test(norm)) {
+    if (typeof storeState.toggleQuiz === 'function' && !storeState.isQuizOpen) storeState.toggleQuiz();
+    return { handled: true, actionTaken: 'TOGGLE_QUIZ', message: 'Quiz tool opened.' };
+  }
+  if (/^(?:open|show|start|use)\s+(?:the\s+)?(?:math graph|function graph|graph tool)\b/i.test(norm)) {
+    if (typeof storeState.toggleMathGraph === 'function') storeState.toggleMathGraph();
+    return { handled: true, actionTaken: 'TOGGLE_MATH_GRAPH', message: 'Math graph opened.' };
+  }
+
+  // 1. Instant Reflex Handlers (<15ms, zero LLM roundtrip)
+  const timerOpenMatch = norm.match(/^(buka|tampilkan|nyalakan|pasang|mulai|start|show|open|set)\s+(timer|penghitung waktu|stopwatch)(?:\s+(\d+)\s*(menit|mnt|min|minutes?|detik|sec|seconds?))?/i);
+  if (timerOpenMatch) {
+    const amount = timerOpenMatch[3] ? parseInt(timerOpenMatch[3], 10) : null;
+    const unit = (timerOpenMatch[4] || 'menit').toLowerCase();
+    if (amount && amount > 0 && typeof storeState.updateDomElement === 'function') {
+      const seconds = unit.startsWith('det') || unit.startsWith('sec') ? amount : amount * 60;
+      const existingTimers = Object.values(storeState.domElements || {}).filter((el: any) => el.componentType === 'TIMER') as any[];
+      if (existingTimers.length > 0) {
+        const lastTimer = existingTimers[existingTimers.length - 1];
+        storeState.updateDomElement(lastTimer.id, { config: { ...lastTimer.config, seconds, mode: 'TIMER' } });
+      } else {
+        const id = `timer_${Date.now()}`;
+        storeState.updateDomElement(id, {
+          id,
+          html: '<div>Timer</div>',
+          componentType: 'TIMER',
+          config: { seconds, mode: 'TIMER' },
+          x: 960,
+          y: 540,
+          width: 320,
+          height: 380,
+          scaleX: 1,
+          scaleY: 1,
+          rotation: 0,
+          zIndex: 15
+        });
+      }
+    }
+    if (!storeState.isTimerOpen && typeof storeState.toggleTimer === 'function') storeState.toggleTimer();
+    return { handled: true, actionTaken: 'TOGGLE_TIMER', message: '⏱️ Timer opened.' };
+  }
+  if (/^(tutup|close|sembunyikan|hide)\s+(timer|stopwatch)/i.test(norm)) {
+    if (storeState.isTimerOpen) storeState.toggleTimer();
+    return { handled: true, actionTaken: 'CLOSE_TIMER', message: '⏱️ Timer closed.' };
+  }
+  if (/^(buka|tampilkan|hitung|open)\s+(kalkulator|calculator)/i.test(norm)) {
+    if (!storeState.isCalculatorOpen) storeState.toggleCalculator();
+    return { handled: true, actionTaken: 'TOGGLE_CALCULATOR', message: '🧮 Calculator opened.' };
+  }
+  if (/^(tutup|close)\s+(kalkulator|calculator)/i.test(norm)) {
+    if (storeState.isCalculatorOpen) storeState.toggleCalculator();
+    return { handled: true, actionTaken: 'CLOSE_CALCULATOR', message: '🧮 Calculator closed.' };
+  }
+  if (/^(buka|tampilkan|open)\s+(catatan|notes|note)$/i.test(norm)) {
+    if (!storeState.isNotesOpen) storeState.toggleNotes();
+    return { handled: true, actionTaken: 'TOGGLE_NOTES', message: '📝 Notes opened.' };
+  }
+  if (/^(buka|tampilkan|open)\s+(absensi|presensi|kehadiran|roster)/i.test(norm)) {
+    if (!storeState.isAttendanceOpen) storeState.toggleAttendance();
+    return { handled: true, actionTaken: 'TOGGLE_ATTENDANCE', message: '📋 Attendance opened.' };
+  }
+  if (/^(buka|tampilkan|open)\s+(todo|daftar tugas|agenda)/i.test(norm)) {
+    if (!storeState.isTodoListOpen) storeState.toggleTodoList();
+    return { handled: true, actionTaken: 'TOGGLE_TODOLIST', message: '✅ Class agenda opened.' };
+  }
+  if (/^(buka|putar|spin|roll|acak)\s+(roda|spin wheel|wheel|roda keberuntungan|giliran)/i.test(norm)) {
+    storeState.toggleSpinWheel();
+    return { handled: true, actionTaken: 'TOGGLE_SPIN_WHEEL', message: '🎡 Random student wheel opened.' };
+  }
+  if (/^(buka|tampilkan|open)\s+(papan skor|scoreboard|skor)/i.test(norm)) {
+    storeState.toggleScoreboard();
+    return { handled: true, actionTaken: 'TOGGLE_SCOREBOARD', message: '🏆 Scoreboard opened.' };
+  }
+  if (/^(buka|tampilkan|open)\s+(tabel periodik|periodic table)/i.test(norm)) {
+    if (typeof storeState.togglePeriodicTable === 'function' && !storeState.isPeriodicTableOpen) {
+      storeState.togglePeriodicTable();
+    }
+    return { handled: true, actionTaken: 'TOGGLE_PERIODIC_TABLE', message: '🧪 Periodic table opened.' };
+  }
+  if (/^(buka|tampilkan|open)\s+(konversi satuan|unit converter)/i.test(norm)) {
+    if (typeof storeState.toggleUnitConverter === 'function' && !storeState.isUnitConverterOpen) {
+      storeState.toggleUnitConverter();
+    }
+    return { handled: true, actionTaken: 'TOGGLE_UNIT_CONVERTER', message: '📏 Unit converter opened.' };
+  }
+  if (isNewPageRequest(norm)) {
+    if (typeof storeState.addPage === 'function') storeState.addPage();
+    return { handled: true, actionTaken: 'ADD_PAGE', message: 'New page opened.' };
+  }
+  if (/^(undo|batalkan|kembali)(?:\s+aksi(?:\s+terakhir|\s+tadi)?)?$/i.test(norm)) {
+    if (typeof storeState.undoCanvas === 'function') storeState.undoCanvas();
+    else if (typeof (window as any).__chalkUndo === 'function') (window as any).__chalkUndo();
+    return { handled: true, actionTaken: 'UNDO', message: '↩️ Last action undone.' };
+  }
+  if (/^(redo|ulangi)(?:\s+aksi(?:\s+terakhir|\s+tadi)?)?$/i.test(norm)) {
+    if (typeof storeState.redoCanvas === 'function') storeState.redoCanvas();
+    else if (typeof (window as any).__chalkRedo === 'function') (window as any).__chalkRedo();
+    return { handled: true, actionTaken: 'REDO', message: '↪️ Action redone.' };
+  }
+  if (/^(zoom in|perbesar|zoom dekat)(?:\s+kanvas|\s+layar|\s+tampilan)?$/i.test(norm)) {
+    if (canvas) {
+      canvas.setZoom(Math.min(canvas.getZoom() * 1.25, 4));
+      canvas.requestRenderAll();
+    }
+    return { handled: true, actionTaken: 'ZOOM_IN', message: '🔍 Zoomed in.' };
+  }
+  if (/^(zoom out|perkecil|zoom jauh)(?:\s+kanvas|\s+layar|\s+tampilan)?$/i.test(norm)) {
+    if (canvas) {
+      canvas.setZoom(Math.max(canvas.getZoom() * 0.8, 0.2));
+      canvas.requestRenderAll();
+    }
+    return { handled: true, actionTaken: 'ZOOM_OUT', message: '🔍 Zoomed out.' };
+  }
+  if (/^(reset zoom|fit view|pusatkan|reset kanvas|pusatkan layar|reset kamera)$/i.test(norm)) {
+    if (canvas) {
+      canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+      canvas.requestRenderAll();
+    }
+    if (typeof storeState.setViewport === 'function') {
+      storeState.setViewport(1, [1, 0, 0, 1, 0, 0]);
+    }
+    return { handled: true, actionTaken: 'RESET_ZOOM', message: '🎯 Canvas centered.' };
+  }
+
+  // 2. In-Place Target Element Locking for System 2
+  const isModification = /ubah|ganti|edit|tambah(?:kan)?\s+cabang|subtopik|perbarui|update|revisi|expand|modifikasi/i.test(norm);
+  if (isModification) {
+    const doms = storeState.domElements || {};
+    const diagrams = Object.entries(doms).filter(([_, el]: any) => {
+      const ct = (el.componentType || '').toLowerCase();
+      return ct.includes('mermaid') || ct.includes('markmap');
+    });
+    const targetId = diagrams.length > 0 ? diagrams[diagrams.length - 1][0] : undefined;
+    return {
+      handled: false,
+      lockIntent: 'modification',
+      targetObjectId: targetId
+    };
+  }
+
+  return { handled: false };
+}
+
+// ============================================================================
+// TOOL CALL VALIDATION & AUTO-CORRECTION
+// ============================================================================
+interface ToolCallError {
+  tool: string;
+  error: string;
+  suggestedFix?: any;
+}
+
+const validateAndFixToolCall = (call: any): { valid: boolean; fixed?: any; error?: string } => {
+  const args = call.args || {};
+  switch (call.name) {
+    case 'render_mermaid':
+      if (!args.code) {
+        return {
+          valid: false,
+          error: 'Missing required code for render_mermaid',
+          fixed: { ...args, code: 'mindmap\n  root((Concept Map))\n    Branch 1\n    Branch 2' }
+        };
+      }
+      args.code = sanitizeMermaidCode(args.code, args.title || 'Concept Map');
+      return { valid: true };
+
+    case 'add_mindmap_node':
+      if (!args.text) {
+        return {
+          valid: false,
+          error: 'Missing required field: text',
+          fixed: { ...args, text: 'New node' }
+        };
+      }
+      // ✅ FIX: Match exactly what aiTools.ts defines
+      const validStyles = ['MAIN_TOPIC', 'SUBTOPIC', 'DETAIL', 'HIGHLIGHT'];
+      if (args.style && !validStyles.includes(args.style)) {
+        return {
+          valid: false,
+          error: `Invalid style: ${args.style}`,
+          fixed: { 
+            ...args, 
+            // Smart fallback based on whether it has a parent
+            style: args.parentNodeText ? 'SUBTOPIC' : 'MAIN_TOPIC'
+          }
+        };
+      }
+      return { valid: true };
+
+    case 'add_component':
+      if (!args.componentType) {
+        return {
+          valid: false,
+          error: 'Missing componentType',
+          fixed: { ...args, componentType: 'MARKDOWN_NOTE' }
+        };
+      }
+      if (args.configJson) {
+        try {
+          JSON.parse(args.configJson);
+        } catch (_) {
+          return {
+            valid: false,
+            error: 'Invalid configJson string',
+            fixed: { ...args, configJson: '{}' }
+          };
+        }
+      }
+      return { valid: true };
+
+    case 'modify_object':
+      if (!args.objectId && !args.elementText) {
+        return {
+          valid: false,
+          error: 'Missing objectId or elementText for modify_object',
+          fixed: null
+        };
+      }
+      const validActions = ['MOVE_TO_GRID', 'DELETE', 'UPDATE_TEXT', 'RESIZE', 'RESIZE_OBJECT', 'CHANGE_COLOR', 'CHANGE_STROKE'];
+      if (!args.action || !validActions.includes(args.action)) {
+        return {
+          valid: false,
+          error: `Invalid action: ${args.action}`,
+          fixed: { ...args, action: 'MOVE_TO_GRID', value: 'CENTER' }
+        };
+      }
+      return { valid: true };
+
+    case 'add_interactive_app':
+      if (!args.html && !args.js) {
+        return {
+          valid: false,
+          error: 'Empty interactive app code',
+          fixed: { ...args, html: '<h3>Aplikasi Kustom</h3>' }
+        };
+      }
+      return { valid: true };
+
+    case 'add_text_label':
+      if (!args.text) {
+        return {
+          valid: false,
+          error: 'Missing text in add_text_label',
+          fixed: { ...args, text: 'Label' }
+        };
+      }
+      return { valid: true };
+
+    default:
+      return { valid: true };
+  }
+};
+
+export const classifyIntent = (prompt: string): 'question' | 'creation' | 'modification' | 'navigation' => {
+  const cleaned = stripConversationalPrefix(normalizeSpokenNumbers(prompt));
+  const navigationWords = /\b(pergi\s+ke|zoom|pan|navigasi|navigate|ke\s+halaman|pindah\s+(?:ke\s+)?halaman|halaman\s+baru|tambah\s+halaman|pusatkan\s+layar|reset\s+kamera|geser\s+(?:layar|kanvas))\b/i;
+  const modificationWords = /\b(ubah|edit|hapus|delete|remove|pindah|move|update|perbarui|revisi|modifikasi|ganti|change|geser|drag|geserkan|pindahkan|reposition|align|expand)\b|tambah(?:kan)?\s+(?:cabang|subtopik|simpul|node)|lanjutkan\s+(?:peta\s+konsep|mindmap|diagram)/i;
+  const creationWords = /\b(buat|buatkan|create|gambar|gambarkan|draw|tambah|tambahkan|add|tulis|tuliskan|write|bikin|generate|tarik|garis|panah|arrow|line|hubungkan|connect|shape|kotak|lingkaran|segitiga|mindmap|diagram|peta\s+konsep|tabel|rangkum|ringkas|susun|visual|kuis|quiz|simulasi)\b/i;
+  const questionWords = /^(apa|apakah|bagaimana|mengapa|kenapa|kapan|siapa|dimana|berapa|what|how|why|when|who|where|jelaskan|terangkan|explain)\b/i;
+
+  // 1. Prioritize explicit board/camera/page navigation commands (e.g. 'pindah halaman', 'geser layar')
+  if (navigationWords.test(cleaned)) return 'navigation';
+  // 2. Prioritize in-place modification when modification verbs are present (even if target nouns like 'mindmap' or 'kotak' are mentioned)
+  if (modificationWords.test(cleaned)) return 'modification';
+  // 3. Pure conceptual questions without explicit board artifact creation keywords
+  if (questionWords.test(cleaned) && !creationWords.test(cleaned)) return 'question';
+  // 4. Default / explicit artifact creation
+  if (creationWords.test(cleaned)) return 'creation';
+  if (questionWords.test(cleaned)) return 'question';
+  return 'creation';
+};
+
+interface ParsedLesson {
+  isLessonStart: boolean;
+  subject?: string;
+  topic?: string;
+  gradeLevel?: string;
+}
+
+const detectLessonStart = (prompt: string): ParsedLesson => {
+  const subjectMap: Record<string, string> = {
+    'ipa': 'IPA', 'biologi': 'IPA Biologi', 'fisika': 'IPA Fisika',
+    'kimia': 'IPA Kimia', 'matematika': 'Matematika', 'mtk': 'Matematika',
+    'ips': 'IPS', 'sejarah': 'IPS Sejarah', 'geografi': 'IPS Geografi',
+    'bahasa indonesia': 'Language arts', 'b.indo': 'Language arts',
+    'bahasa inggris': 'English', 'english': 'English',
+    'pkn': 'PKN', 'agama': 'Pendidikan Agama', 'seni': 'Seni Budaya',
+    'penjaskes': 'PJOK', 'olahraga': 'PJOK'
+  };
+  
+  const gradePattern = /kelas\s*(\d+[a-zA-Z]?)|grade\s*(\d+)|sd|smp|sma/i;
+  const lessonStartWords = /^(hari ini|materi|topik|belajar|ajar|teach|today|lesson about)/i;
+  const subjectPattern = new RegExp(Object.keys(subjectMap).join('|'), 'i');
+  
+  const hasLessonStart = lessonStartWords.test(prompt.trim());
+  const hasSubject = subjectPattern.test(prompt);
+  const gradeMatch = prompt.match(gradePattern);
+  
+  if (!hasLessonStart && !hasSubject) {
+    return { isLessonStart: false };
+  }
+  
+  // Extract subject
+  let detectedSubject = 'Umum';
+  for (const [key, value] of Object.entries(subjectMap)) {
+    if (prompt.toLowerCase().includes(key)) {
+      detectedSubject = value;
+      break;
+    }
+  }
+  
+  // Extract grade
+  let detectedGrade = '';
+  if (gradeMatch) {
+    detectedGrade = `Kelas ${gradeMatch[1] || gradeMatch[2] || ''}`.trim();
+    if (prompt.toLowerCase().includes('sd')) detectedGrade += ' SD';
+    if (prompt.toLowerCase().includes('smp')) detectedGrade += ' SMP';
+    if (prompt.toLowerCase().includes('sma')) detectedGrade += ' SMA';
+  }
+  
+  // Extract topic cleanly from the first line or sentence to prevent bloated topic strings
+  const firstLineOrSentence = prompt.split(/[\n.?!]/)[0];
+  let topic = firstLineOrSentence
+    .replace(subjectPattern, '')
+    .replace(gradePattern, '')
+    .replace(lessonStartWords, '')
+    .replace(/kelas|hari ini|materi|topik|untuk/gi, '')
+    .trim();
+  
+  if (!topic || topic.length < 3) {
+    topic = prompt.split('\n')[0].slice(0, 60).trim();
+  } else if (topic.length > 70) {
+    topic = topic.slice(0, 70).trim() + '...';
+  }
+  
+  return {
+    isLessonStart: true,
+    subject: detectedSubject,
+    topic: topic || 'Lesson Material',
+    gradeLevel: detectedGrade || 'Not specified'
+  };
+};
+
+export const useGeminiBrain = () => {
+  const { setThinking, addAction, addLog, addMessage, setAgentMessage } = useStore();
+  const isProcessingRef = React.useRef(false); // Ref Lock
+
+  const processUserPrompt = useCallback(async (
+    prompt: string,
+    canvasRef: React.MutableRefObject<any>
+  ) => {
+    // Lock guard to prevent concurrent requests
+    if (isProcessingGlobal || isProcessingRef.current) {
+      addLog('The previous request is still running. Please wait.');
+      addMessage({ 
+        role: 'model', 
+        text: 'Please wait. The previous request is still finishing.' 
+      });
+      return;
+    }
+
+    if (isQuestCommand(prompt)) {
+      addMessage({ role: 'model', text: 'Opening a quest from this page.' });
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event('chalk-open-quest'));
+      return;
+    }
+
+    isProcessingGlobal = true;
+    isProcessingRef.current = true;
+
+    if (!canvasRef.current) {
+      isProcessingGlobal = false;
+      isProcessingRef.current = false;
+      return;
+    }
+    const canvas = canvasRef.current;
+    const storeState = useStore.getState();
+
+    // ── JEV SYSTEM 1 REFLEX GATE (Instant Classifier <15ms) ───────────
+    const isJevActive = storeState.experimentalConfig?.enabled && storeState.experimentalConfig?.jevModeEnabled !== false;
+    let jevLockedTargetId: string | undefined = undefined;
+
+    if (isJevActive) {
+      const jevResult = evaluateJevSystemOne(prompt, storeState, canvas);
+      if (jevResult.handled) {
+        if (jevResult.lessonDocument && typeof storeState.updateDomElement === 'function') {
+          const doc = jevResult.lessonDocument;
+          const frame = doc.handwriting
+            ? visiblePageFrame(canvas)
+            : { x: 720, y: 420, width: 680, height: 520 };
+          const config = doc.handwriting
+            ? { ...doc, fontSize: penFontSize(doc.markdown, frame.width, frame.height) }
+            : doc;
+          const id = `board_${Date.now()}`;
+          storeState.updateDomElement(id, {
+            id,
+            html: '<div>Lesson</div>',
+            componentType: 'DOCUMENT_PAGE',
+            config,
+            x: frame.x,
+            y: frame.y,
+            width: frame.width,
+            height: frame.height,
+            scaleX: 1,
+            scaleY: 1,
+            rotation: 0,
+            zIndex: 12,
+          });
+          window.dispatchEvent(new CustomEvent('addCanvasPlaceholder', {
+            detail: { id, x: frame.x, y: frame.y, width: frame.width, height: frame.height },
+          }));
+        }
+        if (jevResult.canvasText?.text) {
+          addAction({
+            id: `ink_${Date.now()}`,
+            type: 'WRITE_TEXT',
+            payload: {
+              text: jevResult.canvasText.text,
+              x: 980,
+              y: 280,
+              fontSize: 40,
+              fontFamily: jevResult.canvasText.fontFamily,
+              color: '#1F2937',
+            },
+            status: 'PENDING',
+          });
+        }
+        sounds.play('pop');
+        const reply = jevResult.message || 'The instant command has run.';
+        addMessage({
+          role: 'model',
+          text: reply
+        });
+        setAgentMessage(reply);
+        addLog(`⚡ Jev System 1 Reflex: ${jevResult.actionTaken} (<15ms)`);
+        isProcessingGlobal = false;
+        isProcessingRef.current = false;
+        return;
+      }
+      if (jevResult.lockIntent === 'modification') {
+        jevLockedTargetId = jevResult.targetObjectId;
+      }
+    }
+
+    setThinking(true);
+    sounds.play('thinking');
+    addLog(`Neural scan started...`);
+
+    const abortController = new AbortController();
+    useStore.getState().setTaskAbortController(abortController);
+
+    const lessonDetection = detectLessonStart(prompt);
+    if (lessonDetection.isLessonStart) {
+      storeState.startLesson(
+        lessonDetection.subject!,
+        lessonDetection.topic!,
+        lessonDetection.gradeLevel!
+      );
+      addLog(`📚 Lesson started: ${lessonDetection.subject} - ${lessonDetection.topic}`);
+    }
+
+    try {
+      // --- 1. VIEWPORT CAPTURE ---
+      const vpt = [...canvas.viewportTransform];
+      const width = canvas.width;
+      const height = canvas.height;
+
+      const invVpt = window.fabric.util.invertTransform(vpt);
+      const tl = window.fabric.util.transformPoint({ x: 0, y: 0 }, invVpt);
+      const br = window.fabric.util.transformPoint({ x: width, y: height }, invVpt);
+
+      const screenToWorld = (screenX: number, screenY: number): Point => {
+        const point = window.fabric.util.transformPoint({ x: screenX, y: screenY }, invVpt);
+        return { x: point.x, y: point.y };
+      };
+
+      // --- 2. CONTEXT GATHERING ---
+      // 0.3x resolution — 40% fewer image tokens vs 0.5x, still sufficient for shape/text
+      const dataUrl = canvas.toDataURL({
+        format: 'png',
+        multiplier: 0.3,
+        left: tl.x, top: tl.y,
+        width: br.x - tl.x, height: br.y - tl.y
+      });
+
+      const rawObjects = canvas.getObjects();
+      const objectsJson: CanvasObjectData[] = rawObjects
+        .map((obj: any) => {
+          const inView = obj.left > tl.x - 500 && obj.left < br.x + 500 && obj.top > tl.y - 500 && obj.top < br.y + 500;
+          if (!inView && rawObjects.length > 20) return null;
+
+          const baseData: CanvasObjectData = {
+            id: obj.id || `obj_${Math.random().toString(36).substr(2, 9)}`,
+            type: obj.type,
+            left: Math.round(obj.left || 0),
+            top: Math.round(obj.top || 0),
+            fill: typeof obj.fill === 'string' ? obj.fill : 'mixed',
+            angle: Math.round(obj.angle || 0),
+            width: Math.round(obj.width * (obj.scaleX || 1)),
+            height: Math.round(obj.height * (obj.scaleY || 1)),
+          };
+
+          if (obj.isDomPlaceholder) {
+            baseData.htmlContent = storeState.domElements[obj.id]?.html;
+          } else if (obj.svgSource) {
+            baseData.svgContent = obj.svgSource;
+          } else if (obj.type === 'i-text' || obj.type === 'text' || obj.type === 'textbox') {
+            baseData.textContent = obj.text;
+          } else if (obj.type === 'group' && typeof obj.getObjects === 'function') {
+            for (const inner of obj.getObjects()) {
+              if ((inner.type === 'i-text' || inner.type === 'text' || inner.type === 'textbox') && inner.text) {
+                baseData.textContent = inner.text;
+                break;
+              }
+            }
+          }
+          return baseData;
+        })
+        .filter(Boolean);
+
+      // --- 3. AI REQUEST ---
+      const intent = classifyIntent(prompt);
+      const currentStoreState = useStore.getState();
+      const { lessonPlan, activeMindmapNodes, attachedDocument } = currentStoreState;
+
+      // Build document context if user attached a document/PDF/file
+      const docContextStr = attachedDocument ? `
+[ATTACHED FILE/DOCUMENT: ${attachedDocument.name}]
+[TYPE: ${attachedDocument.category.toUpperCase()} | SIZE: ${(attachedDocument.size / 1024).toFixed(1)} KB${attachedDocument.pageCount ? ` | PAGES: ${attachedDocument.pageCount}` : ''}${attachedDocument.wordCount ? ` | WORDS: ${attachedDocument.wordCount}` : ''}]
+--- DOCUMENT CONTENT START ---
+${attachedDocument.text.slice(0, 120000)}
+--- DOCUMENT CONTENT END ---
+NOTE: The user has attached this document. Use its factual details, structure, and text to fulfill their request (such as answering questions, generating whiteboard mindmaps, summaries, diagrams, or explanations).
+` : '';
+
+      // Build lesson context string
+      const lessonContextStr = lessonPlan 
+        ? `
+LESSON CONTEXT:
+- Subject: ${lessonPlan.subject}
+- Topic: ${lessonPlan.topic}  
+- Grade: ${lessonPlan.gradeLevel}
+- Current Phase: ${lessonPlan.phase}
+- Completed: ${lessonPlan.completedSteps.length} steps done
+`
+        : '';
+
+      // Build existing mindmap context
+      const mindmapContextStr = activeMindmapNodes.length > 0
+        ? `
+EXISTING MINDMAP NODES (DO NOT RECREATE THESE):
+${activeMindmapNodes.map(n => 
+  `- "${n.text}" (${n.style})${n.parentNodeText ? ` → child of "${n.parentNodeText}"` : ' → ROOT'}`
+).join('\n')}
+
+INSTRUCTIONS FOR CONTINUING / EXPANDING / MODIFYING MINDMAP:
+- To EXPAND / CONTINUE this mindmap: call add_mindmap_node with text and parentNodeText set to the exact branch/node to extend.
+- To MODIFY a node: call modify_object with elementText (e.g. UPDATE_TEXT, CHANGE_COLOR) or drag_element.
+- To TIDY UP or REDESIGN layout: call relayout_mindmap.
+- To CREATE NEW mindmap: previous mindmap nodes will be cleared first.
+`
+        : '';
+
+      const isLongPrompt = prompt.length > 200 || prompt.includes('\n') || prompt.split(/\s+/).length > 30;
+      const longPromptDirective = isLongPrompt ? `
+[MULTI-STEP / LONG PROMPT DIRECTIVE]
+The user provided a detailed, multi-step, or structured request.
+1. Fulfill EVERY item, question, and visual requirement specified in the user message.
+2. Do not stop after the first step or truncate output; deliver both complete textual explanation and all required visual tool calls.
+3. Use clear markdown formatting with headings and bullet points.
+` : '';
+
+      const jevDirective = jevLockedTargetId ? `
+[JEV SYSTEM 1 DECISION: IN-PLACE MUTATION ONLY]
+Target Component ID: "${jevLockedTargetId}".
+DO NOT create a new widget. Call update_component targeting "${jevLockedTargetId}" with the updated code.
+` : '';
+
+      const enrichedPrompt = `
+${docContextStr}
+${longPromptDirective}
+${lessonContextStr}
+${mindmapContextStr}
+${jevDirective}
+[USER INTENT: ${intent.toUpperCase()}]
+[USER MESSAGE]: ${prompt}
+`.trim();
+
+      const forceTools = intent === 'creation' || intent === 'modification';
+
+      const lessonContextObj = lessonPlan ? {
+        subject: lessonPlan.subject,
+        topic: lessonPlan.topic,
+        gradeLevel: lessonPlan.gradeLevel,
+        phase: lessonPlan.phase,
+        existingMindmapNodes: activeMindmapNodes.map(n => n.text),
+        completedSteps: lessonPlan.completedSteps
+      } : undefined;
+
+      const inputDocMedia = storeState.attachedDocument?.dataUrl || storeState.lastUploadedImage;
+
+      const expConfig = storeState.experimentalConfig;
+      const historyDepth = (expConfig?.enabled && expConfig?.breakTheLimitAi !== false) ? 20 : 8;
+
+      const _aiResult = await generateAgentActions(
+        enrichedPrompt,
+        dataUrl,
+        objectsJson,
+        { width: br.x - tl.x, height: br.y - tl.y },
+        inputDocMedia,
+        storeState.messages.slice(-historyDepth).map(m => ({ role: m.role, text: m.text })),
+        { current: storeState.currentPageIndex, total: storeState.pages.length },
+        storeState.domElements,
+        intent,
+        forceTools,
+        lessonContextObj,
+        abortController.signal
+      );
+
+      // Check if user clicked cancel during network generation
+      if (abortController.signal.aborted || !useStore.getState().isThinking) {
+        logger.info('[GeminiBrain] Task was aborted by user during AI generation. Halting pipeline.');
+        return;
+      }
+
+      let functionCalls = _aiResult.functionCalls;
+      const { textResponse, thought } = _aiResult;
+
+      if (thought) addLog(`AI Thoughts: ${thought}`);
+      useStore.getState().setAttachedDocument(null);
+      useStore.getState().setLastUploadedImage(null);
+
+      let cleanMsg = textResponse?.trim() || "";
+
+      // Defense-in-depth: If raw JSON or markdown JSON blocks leak into textResponse, sanitize them
+      if (cleanMsg.startsWith('{') || cleanMsg.startsWith('```json') || cleanMsg.includes('"functionCalls"') || cleanMsg.includes('"textResponse"') || cleanMsg.includes('json\n') || cleanMsg.includes('Salin\n{')) {
+        try {
+          const jsonMatch = cleanMsg.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const innerMatch = jsonMatch[0].match(/"textResponse"\s*:\s*"([\s\S]*?)(?<!\\)"/);
+            if (innerMatch && innerMatch[1]) {
+              cleanMsg = innerMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"');
+            } else {
+              cleanMsg = cleanMsg.replace(/```(?:json)?[\s\S]*?```/gi, '').replace(/\{[\s\S]*\}/g, '').replace(/json\s+Salin\s*/gi, '').trim();
+            }
+          }
+        } catch (_) {}
+      }
+
+      const msg = cleanMsg.trim() || synthesizeFallbackResponse(functionCalls, storeState.lessonPlan);
+      const tele = _aiResult?.telemetry;
+      addMessage({
+        role: 'model',
+        text: msg,
+        telemetryId: tele?.id,
+        tokens: tele?.totalTokens,
+        latencyMs: tele?.latencyMs,
+        costIdr: tele?.costIdr,
+        model: tele?.model || _aiResult?.model || storeState.selectedOllamaModel || storeState.selectedGeminiModel || storeState.selectedVertexModel,
+        provider: tele?.provider || _aiResult?.provider || storeState.aiPreference
+      });
+      setAgentMessage(msg);
+
+      // --- 4. POST-PROCESSING PIPELINE ---
+
+      // Stage 0: Validation & Auto-Correction
+      const errors: ToolCallError[] = [];
+      functionCalls = functionCalls.map((call: any) => {
+        const validation = validateAndFixToolCall(call);
+        if (!validation.valid) {
+          errors.push({
+            tool: call.name,
+            error: validation.error!,
+            suggestedFix: validation.fixed
+          });
+          logger.warn(`⚠️ AI tool call auto-corrected: ${call.name}`, {
+            original: call.args,
+            fixed: validation.fixed,
+            reason: validation.error
+          });
+          if (validation.fixed) {
+            return { ...call, args: validation.fixed };
+          }
+        }
+        return call;
+      }).filter(Boolean);
+
+      if (errors.length > 0) {
+        addLog(`Auto-corrected ${errors.length} AI argument errors.`);
+      }
+
+      // Stage 1: Hard cap on total calls (Break-The-Limit: 60 in experimental, 18 standard)
+      const MAX_CALLS = (expConfig?.enabled && expConfig?.breakTheLimitAi !== false) ? 60 : 18;
+      if (functionCalls.length > MAX_CALLS) {
+        logger.warn(`[Cap] Clamping ${functionCalls.length} calls to ${MAX_CALLS}`);
+        functionCalls = functionCalls.slice(0, MAX_CALLS);
+      }
+
+      // Stage 2: Deduplication
+      const seenSigs = new Set<string>();
+      functionCalls = functionCalls.filter(call => {
+        const args = call.args || {};
+        const sig = [call.name, args.text || '', args.gridPosition || '', args.parentNodeText || '', args.objectId || '', args.fromNodeText || '', args.toNodeText || ''].join(':');
+        if (seenSigs.has(sig)) { logger.warn(`[Dedup] Skipped: ${sig}`); return false; }
+        seenSigs.add(sig);
+        return true;
+      });
+
+      // Stage 3: Separate mindmap nodes from other calls
+      const mindmapCalls = functionCalls.filter(c => c.name === 'add_mindmap_node');
+      const otherCalls = functionCalls.filter(c => c.name !== 'add_mindmap_node' && c.name !== 'connect_nodes');
+      // connect_nodes is only used for non-mindmap diagrams
+      let connectCalls = functionCalls.filter(c => c.name === 'connect_nodes');
+
+      // 🛑 HARD RULE: Jika ada mindmap, buang SEMUA connect_nodes
+      // (koneksi mindmap sudah auto-generate dari parentNodeText)
+      if (mindmapCalls.length > 0 && connectCalls.length > 0) {
+        logger.warn(`[Safety] Dropped ${connectCalls.length} connect_nodes calls (mindmap present, connections auto-generated)`);
+        connectCalls = [];
+      }
+
+      // Validasi connect_nodes
+      connectCalls = connectCalls.filter(c => {
+        const from = (c.args?.fromNodeText || '').trim();
+        const to = (c.args?.toNodeText || '').trim();
+        const direction = c.args?.direction;
+        const hasCoords = typeof c.args?.fromX === 'number' || typeof c.args?.toX === 'number';
+
+        if (hasCoords || direction) return true;
+
+        const garbageValues = ['MAIN_TOPIC', 'SUBTOPIC', 'DETAIL', 'HIGHLIGHT', 'root', '//root//'];
+        if (garbageValues.includes(from.toUpperCase()) || garbageValues.includes(to.toUpperCase())) {
+          logger.warn(`[Safety] Rejected placeholder connect_nodes call: "${from}" -> "${to}"`);
+          return false;
+        }
+        return Boolean(from || to);
+      });
+
+      // ── Viewport center (world coords) ─────────────────────────────────────
+      const centerX = (tl.x + br.x) / 2;
+      const centerY = (tl.y + br.y) / 2;
+      let lastWorldPos = { x: centerX, y: centerY };
+
+      const getGridPos = (gridPos?: string) => {
+        if (!gridPos) return lastWorldPos;
+        const vWidth = br.x - tl.x;
+        const vHeight = br.y - tl.y;
+        const gw = vWidth / 3, gh = vHeight / 3;
+        let pt = { x: tl.x + vWidth / 2, y: tl.y + vHeight / 2 };
+        if (gridPos.includes('TOP')) pt.y = tl.y + gh / 2;
+        if (gridPos.includes('BOTTOM')) pt.y = tl.y + vHeight - gh / 2;
+        if (gridPos.includes('LEFT')) pt.x = tl.x + gw / 2;
+        if (gridPos.includes('RIGHT')) pt.x = tl.x + vWidth - gw / 2;
+        lastWorldPos = pt;
+        return pt;
+      };
+
+      // ── ACTION QUEUES (nodes first, then connections, then everything else) ──
+      const shapeActions: AgentAction[] = [];
+      const pathActions: AgentAction[] = [];
+      const otherActions: AgentAction[] = [];
+
+      // ── Mind map via Mermaid Engine (Pure Interactive Diagram) ─────────────
+      if (mindmapCalls.length > 0) {
+        const rootCall = mindmapCalls.find(c => c.args.style === 'MAIN_TOPIC' || !c.args.parentNodeText) || mindmapCalls[0];
+        const rootTitle = cleanMermaidNodeLabel(rootCall.args.text || 'Concept Map', 'Concept Map');
+        
+        let rawMermaid = `mindmap\n  root((${rootTitle}))\n`;
+        const otherNodes = mindmapCalls.filter(c => c !== rootCall);
+        
+        for (const node of otherNodes) {
+          const cleanText = cleanMermaidNodeLabel(node.args.text || 'Branch', 'Branch');
+          const isDetail = node.args.style === 'DETAIL';
+          rawMermaid += `${isDetail ? '      ' : '    '}${cleanText}\n`;
+        }
+        const mermaidCode = sanitizeMermaidCode(rawMermaid, rootTitle);
+
+        otherActions.push({
+          id: `action_mermaid_mindmap_${Date.now()}`,
+          type: 'RENDER_HTML',
+          payload: {
+            html: '<div>MERMAID</div>',
+            x: centerX,
+            y: centerY,
+            width: 760,
+            height: 580,
+            componentType: 'MERMAID_DIAGRAM',
+            config: {
+              title: `Concept Map: ${rootTitle}`,
+              code: mermaidCode
+            }
+          },
+          status: 'PENDING'
+        });
+      }
+
+      // ── Freeform connect_nodes (non-mindmap) ───────────────────────────────
+      connectCalls.forEach((call, idx) => {
+        pathActions.push({
+          id: `action_conn_free_${Date.now()}_${idx}`,
+          type: 'DRAW_PATH',
+          payload: {
+            fromNodeText: call.args.fromNodeText,
+            toNodeText: call.args.toNodeText,
+            fromX: call.args.fromX,
+            fromY: call.args.fromY,
+            toX: call.args.toX,
+            toY: call.args.toY,
+            direction: call.args.direction,
+            lineStyle: call.args.lineStyle || 'ARROW_STRAIGHT',
+            strokeColor: call.args.strokeColor || '#3B82F6',
+            isArrow: call.args.isArrow !== false
+          },
+          status: 'PENDING'
+        });
+      });
+
+      // ── All other tool calls ────────────────────────────────────────────────
+      otherCalls.forEach((call, index) => {
+        const args = (call.args || {}) as Record<string, any>;
+        let actionType: AgentAction['type'] | null = null;
+        let payload: any = {};
+
+        if (call.name === 'add_page') {
+          useStore.getState().addPage();
+          return;
+        }
+
+        if (call.name === 'draw_arrow_or_line') {
+          actionType = 'DRAW_PATH';
+          payload = {
+            fromNodeText: args.fromText || args.fromNodeText,
+            toNodeText: args.toText || args.toNodeText,
+            fromX: args.fromX,
+            fromY: args.fromY,
+            toX: args.toX,
+            toY: args.toY,
+            direction: args.direction,
+            lineStyle: args.lineStyle || 'ARROW_STRAIGHT',
+            strokeColor: args.color || args.strokeColor || '#3B82F6',
+            isArrow: args.isArrow !== false
+          };
+
+        } else if (call.name === 'add_text_label') {
+          actionType = 'WRITE_TEXT';
+          const pos = getGridPos(args.gridPosition);
+          let fontSize = 24;
+          if (args.size === 'TITLE') fontSize = 48;
+          if (args.size === 'SUBTITLE') fontSize = 32;
+          payload = { text: args.text, x: pos.x, y: pos.y, fontSize, color: '#000000' };
+
+        } else if (call.name === 'write_with_pen') {
+          actionType = 'RENDER_HTML';
+          const frame = visiblePageFrame(canvas);
+          payload = {
+            html: '',
+            x: frame.x,
+            y: frame.y,
+            width: frame.width,
+            height: frame.height,
+            componentType: 'DOCUMENT_PAGE',
+            config: {
+              title: 'Written with the pen',
+              markdown: args.text || '',
+              handwriting: true,
+              fontSize: penFontSize(args.text || '', frame.width, frame.height),
+            },
+          };
+
+        } else if (call.name === 'show_algorithm') {
+          actionType = 'RENDER_HTML';
+          const pos = getGridPos(args.gridPosition || 'CENTER');
+          const lines = String(args.steps || '').split('\n').map((line: string) => line.trim()).filter(Boolean);
+          const markdown = [`## ${args.title || 'Algorithm'}`, '', ...lines.map((line: string, index: number) => `${index + 1}. ${line}`)].join('\n');
+          payload = {
+            html: '',
+            x: pos.x,
+            y: pos.y,
+            width: 680,
+            height: 520,
+            componentType: 'DOCUMENT_PAGE',
+            config: { title: args.title || 'Algorithm', markdown },
+          };
+
+        } else if (call.name === 'update_component') {
+          actionType = 'EDIT_HTML';
+          let parsedUpdateConfig: any = {};
+          if (args.configJson) {
+            try {
+              parsedUpdateConfig = typeof args.configJson === 'string' ? JSON.parse(args.configJson) : args.configJson;
+            } catch (_) {
+              parsedUpdateConfig = {};
+            }
+          }
+          if (parsedUpdateConfig?.code && typeof parsedUpdateConfig.code === 'string') {
+            parsedUpdateConfig.code = sanitizeMermaidCode(parsedUpdateConfig.code, parsedUpdateConfig.title || args.componentTitle || 'Concept Map');
+          }
+          payload = {
+            objectId: args.objectId || args.componentId,
+            componentTitle: args.componentTitle,
+            action: args.action || 'REPLACE',
+            config: parsedUpdateConfig
+          };
+
+        } else if (call.name === 'update_mindmap_node') {
+          actionType = 'MODIFY_PROPERTY';
+          payload = {
+            elementText: args.targetText,
+            newText: args.newText,
+            newStyle: args.newStyle,
+            newParentNodeText: args.newParentNodeText,
+            property: 'mindmap_node'
+          };
+
+        } else if (call.name === 'add_component') {
+          actionType = 'RENDER_HTML';
+          const pos = getGridPos(args.gridPosition);
+          let html = `<div>${args.componentType}</div>`;
+          let configObj: any = undefined;
+          let pWidth = 450, pHeight = 400;
+          let cType = args.componentType;
+
+          if (args.configJson) {
+            try {
+              configObj = typeof args.configJson === 'string' ? JSON.parse(args.configJson) : args.configJson;
+            } catch (e) {
+              configObj = {};
+            }
+          }
+          if (!configObj) {
+            configObj = {
+              title: args.title || 'Lesson Notes',
+              markdown: args.markdown || args.content || args.text || '',
+              ...(args.questions ? { questions: args.questions } : {}),
+              ...(args.seconds ? { seconds: args.seconds } : {})
+            };
+          }
+
+          if (cType === 'DOCUMENT_PAGE' || cType === 'MARKDOWN_NOTE') {
+            pWidth = 600; pHeight = 700;
+          } else if (cType === 'QUIZ_MULTIPLE_CHOICE') {
+            pWidth = 480; pHeight = 520;
+            if (configObj?.questions && Array.isArray(configObj.questions) && configObj.questions.length > 1) {
+              cType = 'QUIZ_APP';
+              pWidth = 540; pHeight = 620;
+            }
+          } else if (cType === 'QUIZ_TRUE_FALSE') {
+            pWidth = 440; pHeight = 380;
+          } else if (cType === 'QUIZ_APP') {
+            pWidth = 540; pHeight = 620;
+          } else if (cType === 'CALCULATOR') {
+            html = CALCULATOR_TEMPLATE; pWidth = 350; pHeight = 500;
+          } else if (cType === 'TIMER') {
+            html = TIMER_TEMPLATE(configObj?.seconds || 300); pWidth = 300; pHeight = 250;
+          } else if (cType === 'ATTENDANCE' || cType === 'PRESENSI') {
+            pWidth = 440; pHeight = 520;
+          } else if (cType === 'TODOLIST') {
+            pWidth = 380; pHeight = 480;
+          } else if (cType === 'MARKMAP_MINDMAP' || cType === 'MERMAID_DIAGRAM') {
+            pWidth = 680; pHeight = 540;
+          }
+
+          payload = { html, x: pos.x, y: pos.y, width: pWidth, height: pHeight, componentType: cType, config: configObj };
+
+        } else if (call.name === 'render_markmap') {
+          actionType = 'RENDER_HTML';
+          const pos = getGridPos(args.gridPosition || 'CENTER');
+          payload = {
+            html: '<div>MARKMAP</div>',
+            x: pos.x,
+            y: pos.y,
+            width: 720,
+            height: 560,
+            componentType: 'MARKMAP_MINDMAP',
+            config: {
+              title: args.title || 'Markmap Concept Map',
+              markdown: args.markdown
+            }
+          };
+
+        } else if (call.name === 'render_mermaid') {
+          actionType = 'RENDER_HTML';
+          const pos = getGridPos(args.gridPosition || 'CENTER');
+          const safeMermaidCode = sanitizeMermaidCode(args.code, args.title || 'Mermaid Diagram');
+          payload = {
+            html: '<div>MERMAID</div>',
+            x: pos.x,
+            y: pos.y,
+            width: 720,
+            height: 560,
+            componentType: 'MERMAID_DIAGRAM',
+            config: { title: args.title || 'Diagram Mermaid', code: safeMermaidCode }
+          };
+
+        } else if (call.name === 'mark_attendance') {
+          const doms = useStore.getState().domElements;
+          const attendEntry = Object.entries(doms).find(([_, el]) => el.componentType === 'ATTENDANCE' || el.componentType === 'PRESENSI');
+          if (attendEntry) {
+            actionType = 'EDIT_HTML';
+            const [id, el] = attendEntry;
+            const students = Array.isArray(el.config?.students) ? [...el.config.students] : [];
+            const idx = students.findIndex((s: any) => s.name?.toLowerCase().includes((args.studentName || '').toLowerCase()));
+            if (idx >= 0) {
+              students[idx] = { ...students[idx], status: args.status, note: args.note };
+            } else {
+              students.push({ id: `std_${Date.now()}`, name: args.studentName, status: args.status, note: args.note });
+            }
+            payload = { objectId: id, config: { ...el.config, students } };
+          } else {
+            actionType = 'RENDER_HTML';
+            payload = {
+              html: '<div>Attendance</div>',
+              x: 960,
+              y: 540,
+              width: 380,
+              height: 480,
+              componentType: 'ATTENDANCE',
+              config: {
+                title: 'Class Attendance',
+                students: [{ id: `std_${Date.now()}`, name: args.studentName, status: args.status, note: args.note }]
+              }
+            };
+          }
+
+        } else if (call.name === 'spin_wheel') {
+          actionType = 'RENDER_HTML';
+          payload = {
+            html: '<div>Wheel</div>',
+            x: 960,
+            y: 540,
+            width: 440,
+            height: 480,
+            componentType: 'SPIN_WHEEL',
+            config: { title: args.title || 'Random student wheel', items: args.items }
+          };
+
+        } else if (call.name === 'plot_math_function') {
+          actionType = 'RENDER_HTML';
+          payload = {
+            html: '<div>Graph</div>',
+            x: 960,
+            y: 540,
+            width: 460,
+            height: 440,
+            componentType: 'MATH_GRAPH',
+            config: { title: args.title || 'Math Graph', type: args.type, a: args.a, b: args.b, c: args.c }
+          };
+
+        } else if (call.name === 'update_scoreboard') {
+          const doms = useStore.getState().domElements;
+          const scoreEntry = Object.entries(doms).find(([_, el]) => el.componentType === 'SCOREBOARD' || el.componentType === 'PAPAN_SKOR');
+          if (scoreEntry) {
+            actionType = 'EDIT_HTML';
+            const [id, el] = scoreEntry;
+            const teams = Array.isArray(el.config?.teams) ? [...el.config.teams] : [];
+            const idx = teams.findIndex((t: any) => t.name?.toLowerCase().includes((args.teamName || '').toLowerCase()));
+            if (idx >= 0) {
+              teams[idx] = { ...teams[idx], score: (teams[idx].score || 0) + args.deltaScore };
+            }
+            payload = { objectId: id, config: { ...el.config, teams } };
+          } else {
+            actionType = 'RENDER_HTML';
+            payload = {
+              html: '<div>Score</div>',
+              x: 960,
+              y: 540,
+              width: 420,
+              height: 380,
+              componentType: 'SCOREBOARD',
+              config: {
+                title: 'Group scoreboard',
+                teams: [{ name: args.teamName, score: Math.max(0, args.deltaScore) }]
+              }
+            };
+          }
+
+        } else if (call.name === 'pan_camera') {
+          actionType = 'PAN_CAMERA';
+          payload = { objectId: args.targetObjectId, direction: args.direction };
+
+        } else if (call.name === 'modify_object') {
+          if (args.action === 'MOVE_TO_GRID') {
+            actionType = 'DRAG_OBJECT';
+            const pos = getGridPos(args.value);
+            payload = { objectId: args.objectId, elementText: args.elementText, toX: pos.x, toY: pos.y };
+          } else if (args.action === 'DELETE') {
+            actionType = 'DELETE_OBJECT';
+            payload = { objectId: args.objectId, elementText: args.elementText };
+          } else if (args.action === 'UPDATE_TEXT') {
+            actionType = 'MODIFY_PROPERTY';
+            payload = { objectId: args.objectId, elementText: args.elementText, property: 'text', value: args.value };
+          } else if (args.action === 'CHANGE_COLOR') {
+            actionType = 'MODIFY_PROPERTY';
+            payload = { objectId: args.objectId, elementText: args.elementText, property: 'fill', value: args.value };
+          } else if (args.action === 'CHANGE_STROKE') {
+            actionType = 'MODIFY_PROPERTY';
+            payload = { objectId: args.objectId, elementText: args.elementText, property: 'stroke', value: args.value };
+          } else if (args.action === 'RESIZE') {
+            actionType = 'RESIZE_OBJECT';
+            const parts = (args.value || '').split('x');
+            payload = { objectId: args.objectId, elementText: args.elementText, width: Number(parts[0]) || 400, height: Number(parts[1]) || 300 };
+          } else {
+            actionType = 'MODIFY_PROPERTY';
+            payload = { objectId: args.objectId, elementText: args.elementText, property: 'style', value: args.value };
+          }
+
+        } else if (call.name === 'relayout_mindmap') {
+          actionType = 'RELAYOUT_MINDMAP';
+          payload = {
+            layoutType: args.layoutType || 'RADIAL',
+            centerX: args.centerX || centerX,
+            centerY: args.centerY || centerY
+          };
+
+        } else if (call.name === 'reorganize_canvas') {
+          actionType = 'REORGANIZE_CANVAS';
+          payload = { style: args.style || 'AUTO_UNTANGLE' };
+
+        } else if (call.name === 'drag_element') {
+          actionType = 'DRAG_OBJECT';
+          payload = { objectId: args.objectId, elementText: args.elementText, toX: args.toX, toY: args.toY };
+
+        } else if (call.name === 'drag_all_elements') {
+          actionType = 'DRAG_ALL_ELEMENTS';
+          payload = { deltaX: args.deltaX, deltaY: args.deltaY };
+
+        } else if (call.name === 'click_element') {
+          actionType = 'CLICK_ELEMENT';
+          payload = { objectId: args.objectId, elementText: args.elementText, x: args.x, y: args.y };
+
+        } else if (call.name === 'create_shape') {
+          actionType = 'CREATE_SHAPE';
+          payload = {
+            shapeType: args.shapeType,
+            x: args.x,
+            y: args.y,
+            width: args.width,
+            height: args.height,
+            fill: args.fill,
+            stroke: args.stroke || args.strokeColor,
+            strokeWidth: args.strokeWidth,
+            text: args.text
+          };
+
+        } else if (call.name === 'add_interactive_app') {
+          actionType = 'RENDER_HTML';
+          const pos = getGridPos(args.gridPosition);
+          payload = {
+            html: '', x: pos.x, y: pos.y, width: 800, height: 600,
+            componentType: 'INTERACTIVE_APP',
+            config: { html: args.html || '', css: args.css || '', js: args.js || '', title: args.title || 'Interactive App' }
+          };
+        }
+
+        if (!actionType) return;
+        otherActions.push({ id: `action_${Date.now()}_${index}`, type: actionType, payload, status: 'PENDING' });
+      });
+
+      // Stage 4: Enqueue in correct order — shapes first, then connections, then everything else
+      [...shapeActions, ...pathActions, ...otherActions].forEach(a => addAction(a));
+
+    } catch (error: any) {
+      if (error?.name === 'AbortError' || error?.message?.includes('dibatalkan') || error?.message?.includes('cancelled by the user') || !useStore.getState().isThinking) {
+        logger.info('[GeminiBrain] Task was aborted cleanly by user. Suppressing error alerts.');
+        return;
+      }
+
+      logger.error('Failed to process prompt', error);
+
+      let errorMsg = 'Cognitive sync failed. Try again or check the AI connection.';
+      if (error instanceof AiServiceError) {
+        errorMsg = error.message;
+      } else if (error.message?.includes('Ollama Error')) {
+        errorMsg = `Local AI error: ${error.message.replace('Ollama Error: ', '')}`;
+        if (error.message.includes('memory')) errorMsg += ' (The system ran out of memory)';
+      }
+
+      addMessage({ role: 'model', text: errorMsg });
+      addLog(`AI error: ${errorMsg}`);
+      setAgentMessage(errorMsg);
+    } finally {
+      useStore.getState().setTaskAbortController(null);
+      setThinking(false);
+      sounds.stop('thinking');
+      isProcessingGlobal = false;
+      isProcessingRef.current = false;
+    }
+  }, [setThinking, addAction, addLog, addMessage, setAgentMessage]);
+
+  return { processUserPrompt, isProcessing: () => isProcessingGlobal || isProcessingRef.current };
+};

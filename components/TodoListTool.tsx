@@ -1,0 +1,73 @@
+import React, { useState } from 'react';
+import { Check, Plus, Trash2 } from 'lucide-react';
+import { useTranslation } from '../utils/translations';
+
+interface Todo {
+  id: string;
+  text: string;
+  completed: boolean;
+}
+
+export const TodoListTool: React.FC = () => {
+  const { t } = useTranslation();
+  const [todos, setTodos] = useState<Todo[]>(() => [
+    { id: '1', text: 'Discuss Chapter 4', completed: true },
+    { id: '2', text: 'Math Exercises', completed: false },
+    { id: '3', text: 'Group Assignment', completed: false },
+  ]);
+  const [input, setInput] = useState('');
+
+  const addTodo = () => {
+    if (input.trim()) {
+      setTodos([...todos, { id: Date.now().toString(), text: input.trim(), completed: false }]);
+      setInput('');
+    }
+  };
+
+  const toggleTodo = (id: string) => {
+    setTodos(todos.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
+  };
+
+  const deleteTodo = (id: string) => {
+    setTodos(todos.filter(t => t.id !== id));
+  };
+
+  return (
+    <div className="flex flex-col h-full bg-[#F6F0E8] font-sans">
+      <div className="p-4 bg-[#FFF6EE] border-b border-slate-100 flex gap-2">
+        <input 
+          type="text" 
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && addTodo()}
+          placeholder={t('todoPlaceholder', 'Add new task...')}
+          className="flex-1 bg-[#F6F0E8] border border-[#E7DDD2] rounded-xl px-4 py-2 text-sm font-medium outline-none focus:border-[#F4B183]"
+        />
+        <button onClick={addTodo} className="w-10 h-10 bg-[#6B4423] text-white flex items-center justify-center rounded-xl shadow-md hover:bg-[#3F2A1D] active:scale-95 transition-all">
+          <Plus size={18} />
+        </button>
+      </div>
+      <div className="flex-1 overflow-auto p-4 custom-scrollbar space-y-2">
+        {todos.map(todo => (
+          <div key={todo.id} className={`flex items-center gap-3 p-3 rounded-xl border bg-[#FFF6EE] shadow-sm transition-all group ${todo.completed ? 'border-slate-100 opacity-60' : 'border-[#E7DDD2]'}`}>
+            <button 
+              onClick={() => toggleTodo(todo.id)}
+              className={`w-6 h-6 rounded-md flex items-center justify-center border transition-colors shrink-0 ${todo.completed ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-[#E7DDD2] hover:border-[#F4B183]'}`}
+            >
+              {todo.completed && <Check size={14} strokeWidth={3} />}
+            </button>
+            <span className={`text-sm font-bold flex-1 ${todo.completed ? 'line-through text-slate-400' : 'text-[#6B4423]'}`}>
+              {todo.text}
+            </span>
+            <button onClick={() => deleteTodo(todo.id)} className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity p-1">
+              <Trash2 size={16} />
+            </button>
+          </div>
+        ))}
+        {todos.length === 0 && (
+          <div className="text-center text-slate-400 text-sm font-bold mt-10">{t('noTasksYet', 'No tasks yet.')}</div>
+        )}
+      </div>
+    </div>
+  );
+};

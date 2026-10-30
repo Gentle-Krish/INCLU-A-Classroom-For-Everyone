@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inclu — Setup</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #F6F0E8;
+    color: #3F2A1D;
+    font-family: -apple-system, 'Segoe UI', Inter, system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+  }
+  .card {
+    background: #F6F0E8;
+    border: 1px solid rgba(63, 42, 29, 0.15);
+    border-radius: 28px;
+    padding: 2rem;
+    max-width: 460px;
+    width: 100%;
+    box-shadow: 0 24px 50px rgba(63, 42, 29, 0.12);
+  }
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 1rem;
+  }
+  .brand strong { font-size: 1.35rem; letter-spacing: -0.04em; }
+  .pill {
+    background: #F4B183;
+    color: #3F2A1D;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border-radius: 999px;
+    padding: 3px 8px;
+  }
+  h1 { font-size: 1.35rem; line-height: 1.25; margin-bottom: 0.5rem; }
+  .lead { font-size: 0.92rem; line-height: 1.45; margin-bottom: 1.1rem; }
+  .panel {
+    border: 1px solid rgba(63, 42, 29, 0.15);
+    border-radius: 18px;
+    padding: 0.95rem 1rem;
+    margin-bottom: 1rem;
+  }
+  .status { font-size: 0.92rem; font-weight: 700; line-height: 1.4; }
+  .error { color: #8C3A2F; font-size: 0.86rem; font-weight: 650; margin-top: 0.45rem; }
+  .bar-wrap { margin-top: 0.75rem; }
+  .bar-meta { display: flex; justify-content: space-between; font-size: 0.75rem; font-weight: 800; margin-bottom: 0.35rem; }
+  .track { height: 10px; background: rgba(63, 42, 29, 0.12); border-radius: 999px; overflow: hidden; }
+  .fill { height: 100%; background: #F4B183; width: 0; border-radius: 999px; }
+  .fill.indeterminate { width: 35%; animation: slide 1.1s ease-in-out infinite; }
+  @keyframes slide { 50% { margin-left: 65%; } }
+  button {
+    width: 100%;
+    border: none;
+    border-radius: 999px;
+    padding: 0.85rem 1rem;
+    font-weight: 800;
+    font-size: 0.92rem;
+    cursor: pointer;
+    margin-top: 0.55rem;
+  }
+  .primary { background: #F4B183; color: #3F2A1D; }
+  .quiet { background: transparent; color: #3F2A1D; border: 1px solid rgba(63, 42, 29, 0.25); }
+  button:disabled { opacity: 0.6; cursor: default; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand"><strong>Inclu</strong><span class="pill">Setup</span></div>
+    <h1>This class laptop needs the local model</h1>
+    <p class="lead">Inclu keeps class work on this computer. The download uses the local Ollama already on this laptop.</p>
+    <div class="panel">
+      <p class="status" id="status">Checking whether Ollama is running on this laptop…</p>
+      <p class="error" id="error" hidden></p>
+      <div class="bar-wrap" id="progress" hidden>
+        <div class="bar-meta"><span id="phase">Download started</span><span id="percent">Pulling…</span></div>
+        <div class="track"><div class="fill indeterminate" id="fill"></div></div>
+      </div>
+    </div>
+    <button class="primary" id="primary" hidden>Download the local model</button>
+    <button class="quiet" id="continue" hidden>Continue to the board</button>
+  </div>
+  <script>
+    const MODEL = 'chalk-gemma:2b';
+    const DISMISS = 'chalk-local-model-setup-dismissed';
+    const statusEl = document.getElementById('status');
+    const errorEl = document.getElementById('error');
+    const progressEl = document.getElementById('progress');
+    const phaseEl = document.getElementById('phase');
+    const percentEl = document.getElementById('percent');
+    const fillEl = document.getElementById('fill');
+    const primaryBtn = document.getElementById('primary');
+    const continueBtn = document.getElementById('continue');
+    const NOT_INSTALLED = 'Ollama is not installed or is not running on this laptop. The download did not start.';
+
+    function screenText(text) {
+      return String(text || '').replace(/\b[\w.-]*gemma[\w.:-]*/gi, 'local model');
+    }
+
+    function showError(message) {
+      errorEl.hidden = !message;
+      errorEl.textContent = message ? screenText(message) : '';
+    }
+
+    function showProgress(phase, percent) {
+      progressEl.hidden = false;
+      phaseEl.textContent = phase;
+      if (percent == null) {
+        percentEl.textContent = 'Pulling…';
+        fillEl.classList.add('indeterminate');
+        fillEl.style.width = '';
+      } else {
+        percentEl.textContent = percent + '%';
+        fillEl.classList.remove('indeterminate');
+        fillEl.style.width = percent + '%';
+      }
+    }
+
+    function goToBoard() {
+      sessionStorage.setItem(DISMISS, '1');
+      window.location.href = '/?app=true';
+    }
+
+    async function probe() {
+      statusEl.textContent = 'Checking whether Ollama is running on this laptop…';
+      showError('');
+      progressEl.hidden = true;
+      primaryBtn.hidden = true;
+      continueBtn.hidden = true;
+      const response = await fetch('/api/ai/pull-model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ probe: true, model: MODEL })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 503 || data.code === 'ollama_not_installed' || data.ollamaRunning === false) {
+        statusEl.textContent = NOT_INSTALLED;
+        primaryBtn.hidden = false;
+        primaryBtn.textContent = 'Check again';
+        primaryBtn.onclick = () => { probe().catch(fail); };
+        continueBtn.hidden = false;
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(data.error || 'Could not check whether Ollama is running on this laptop.');
+      }
+      if (data.modelReady) {
+        window.location.replace('/?app=true');
+        return;
+      }
+      statusEl.textContent = 'This class laptop needs the local model.';
+      primaryBtn.hidden = false;
+      primaryBtn.textContent = 'Download the local model';
+      primaryBtn.onclick = () => { startDownload().catch(fail); };
+      continueBtn.hidden = false;
+    }
+
+    function fail(err) {
+      progressEl.hidden = true;
+      statusEl.textContent = 'The local model download failed.';
+      showError(err && err.message ? err.message : 'The local model download failed.');
+      primaryBtn.hidden = false;
+      primaryBtn.disabled = false;
+      primaryBtn.textContent = 'Try the download again';
+      primaryBtn.onclick = () => { startDownload().catch(fail); };
+      continueBtn.hidden = false;
+    }
+
+    async function startDownload() {
+      primaryBtn.disabled = true;
+      showError('');
+      const response = await fetch('/api/ai/pull-model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+        body: JSON.stringify({ model: MODEL, stream: true })
+      });
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('text/event-stream')) {
+        const data = await response.json().catch(() => ({}));
+        if (response.status === 503 || data.code === 'ollama_not_installed') {
+          statusEl.textContent = NOT_INSTALLED;
+          progressEl.hidden = true;
+          showError('');
+          primaryBtn.disabled = false;
+          primaryBtn.hidden = false;
+          primaryBtn.textContent = 'Check again';
+          primaryBtn.onclick = () => { probe().catch(fail); };
+          continueBtn.hidden = false;
+          return;
+        }
+        throw new Error(data.error || 'The local model download failed.');
+      }
+
+      statusEl.textContent = 'Download started';
+      showProgress('Download started', null);
+      primaryBtn.hidden = true;
+      continueBtn.hidden = true;
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let finished = false;
+      while (true) {
+        const step = await reader.read();
+        if (step.done) break;
+        buffer += decoder.decode(step.value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue;
+          const jsonStr = line.replace(/^data:\s*/, '').trim();
+          if (!jsonStr) continue;
+          let data;
+          try { data = JSON.parse(jsonStr); } catch { continue; }
+          if (data.error) {
+            finished = true;
+            throw new Error(screenText(data.error));
+          }
+          if (data.status === 'success' || data.completed === true || data.phase === 'done') {
+            finished = true;
+            statusEl.textContent = 'The local model is ready.';
+            showProgress('Done', 100);
+            primaryBtn.hidden = true;
+            continueBtn.hidden = false;
+            return;
+          }
+          if (data.status === 'started' || data.phase === 'started') {
+            statusEl.textContent = 'Download started';
+            showProgress('Download started', null);
+            continue;
+          }
+          const raw = String(data.status || '').toLowerCase();
+          const label = raw.includes('manifest') || raw.includes('pull') ? 'Pulling the local model' : 'Downloading the local model';
+          const percent = typeof data.percent === 'number' ? data.percent : null;
+          statusEl.textContent = label;
+          showProgress(label, percent);
+        }
+      }
+      if (!finished) {
+        throw new Error('The local model download failed. The download stopped before it finished.');
+      }
+    }
+
+    continueBtn.onclick = goToBoard;
+    probe().catch(fail);
+  </script>
+</body>
+</html>

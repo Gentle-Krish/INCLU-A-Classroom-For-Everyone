@@ -1,0 +1,1058 @@
+
+import { create } from 'zustand';
+import { CONFIG, CHALK_LOCAL_DOWNLOAD_MODEL, OLLAMA_MODEL, STRONG_GEMMA_MODEL } from './constants';
+import { AgentState, AgentAction, Point, ChatMessage, DomElementState, CreatorTool, FontFamily, BoardSession, PageState, AiPreference, LessonPlan, MindmapNodeRecord, LessonPhase, LessonStep, TranscribeMode, VoiceConfig, AttachedDocument, ExperimentalConfig, SupportedLanguage, SmartboardLayoutMode, ClassRosterEntry, PublicQuestList, QuestScoreBoard, QuestTally, StudentAsk } from './types';
+import { saveSessionToDb, getSessionFromDb, deleteSessionFromDb, getAllSessionsFromDb } from './services/db';
+import { findMatchingMindmapNode } from './utils/mindmapLayout';
+
+interface AppStore extends AgentState {
+  actionQueue: AgentAction[];
+  messages: ChatMessage[];
+  zoom: number;
+  viewportTransform: number[];
+  domElements: Record<string, DomElementState>;
+  lastUploadedImage: string | null; // Base64
+  attachedDocument: AttachedDocument | null;
+  setAttachedDocument: (doc: AttachedDocument | null) => void;
+  theme: 'dark' | 'light';
+  smartboardLayoutMode: SmartboardLayoutMode;
+  setSmartboardLayoutMode: (mode: SmartboardLayoutMode) => void;
+  
+  // App UI State
+  isAiDrawerOpen: boolean;
+  toggleAiDrawer: () => void;
+  isAiModalOpen: boolean;
+  toggleAiModal: () => void;
+  setAiModalOpen: (open: boolean) => void;
+  
+  isTimerOpen: boolean;
+  toggleTimer: () => void;
+  
+  isCalculatorOpen: boolean;
+  toggleCalculator: () => void;
+  
+  isNotesOpen: boolean;
+  toggleNotes: () => void;
+  
+  isQuizOpen: boolean;
+  toggleQuiz: () => void;
+
+  isUnitConverterOpen: boolean;
+  toggleUnitConverter: () => void;
+  
+  isPeriodicTableOpen: boolean;
+  togglePeriodicTable: () => void;
+  
+  isAttendanceOpen: boolean;
+  toggleAttendance: () => void;
+  
+  isTodoListOpen: boolean;
+  toggleTodoList: () => void;
+  
+  toggleSpinWheel: () => void;
+  toggleScoreboard: () => void;
+  toggleMathGraph: () => void;
+  
+  isAssistiveMode: boolean;
+  toggleAssistiveMode: (enabled?: boolean) => void;
+  isHandsFreeListening: boolean;
+  setHandsFreeListening: (active: boolean) => void;
+  lastVoiceCommand: string | null;
+  setLastVoiceCommand: (cmd: string | null) => void;
+  
+  isBoardSettingsOpen: boolean;
+  toggleBoardSettings: () => void;
+
+  isHistoryOpen: boolean;
+  toggleHistory: () => void;
+
+  userName: string;
+  setUserName: (name: string) => void;
+
+  language: SupportedLanguage;
+  setLanguage: (lang: SupportedLanguage) => void;
+
+  aiPreference: AiPreference;
+  setAiPreference: (pref: AiPreference) => void;
+
+  geminiApiKey: string;
+  setGeminiApiKey: (key: string) => void;
+
+  ollamaBaseUrl: string;
+  setOllamaBaseUrl: (url: string) => void;
+
+  selectedGeminiModel: string;
+  setSelectedGeminiModel: (model: string) => void;
+
+  selectedOllamaModel: string;
+  setSelectedOllamaModel: (model: string) => void;
+
+  selectedVertexModel: string;
+  setSelectedVertexModel: (model: string) => void;
+  
+  isViewerUrl: boolean;
+  setIsViewerUrl: (v: boolean) => void;
+
+  classRoster: ClassRosterEntry[];
+  setClassRoster: (roster: ClassRosterEntry[]) => void;
+  questList: PublicQuestList | null;
+  setQuestList: (list: PublicQuestList) => void;
+  questTally: QuestTally | null;
+  setQuestTally: (tally: QuestTally) => void;
+  questScores: QuestScoreBoard | null;
+  setQuestScores: (scores: QuestScoreBoard) => void;
+  studentQuestions: StudentAsk[];
+  setStudentQuestions: (asks: StudentAsk[]) => void;
+  addStudentQuestion: (ask: StudentAsk) => void;
+  updateStudentAnswer: (id: string, answer: string) => void;
+  
+  // Voice & Text Input
+  inputMode: 'voice' | 'text';
+  transcribeMode: TranscribeMode;
+  setTranscribeMode: (mode: TranscribeMode) => void;
+  voiceConfig: VoiceConfig;
+  setVoiceConfig: (config: Partial<VoiceConfig>) => void;
+  experimentalConfig: ExperimentalConfig;
+  setExperimentalConfig: (config: Partial<ExperimentalConfig>) => void;
+  chatInputText: string;
+  setChatInputText: (txt: string) => void;
+  interimInputText: string;
+  setInterimInputText: (txt: string) => void;
+  isVoiceListening: boolean;
+  setVoiceListening: (listening: boolean) => void;
+  
+  // Creator Mode State
+  isCreatorMode: boolean;
+  activeTool: CreatorTool;
+  isShapeFilled: boolean;
+  brushColor: string;
+  brushWidth: number;
+  fontFamily: FontFamily;
+  fontSize: number;
+  
+  // Actions
+  setInputMode: (mode: 'voice' | 'text') => void;
+  setShapeFilled: (filled: boolean) => void;
+  setFontFamily: (font: FontFamily) => void;
+  setFontSize: (size: number) => void;
+  setCursorPosition: (pos: Point) => void;
+  setSpatialTarget: (pos: Point | null) => void;
+  setAccuracy: (val: number) => void;
+  setThinking: (thinking: boolean) => void;
+  setActing: (acting: boolean) => void;
+  setClicking: (clicking: boolean) => void;
+  setCurrentAction: (action: string | null) => void;
+  setAgentMessage: (msg: string | null) => void;
+  setLastUploadedImage: (img: string | null) => void;
+  toggleTheme: () => void;
+  
+  // Creator Actions
+  toggleCreatorMode: () => void;
+  setActiveTool: (tool: CreatorTool) => void;
+  setBrushColor: (color: string) => void;
+  setBrushWidth: (width: number) => void;
+  
+  // Pages
+  pages: PageState[];
+  currentPageIndex: number;
+  addPage: (emptyState?: object, previewDataUrl?: string) => void;
+  switchPage: (index: number) => void;
+  updatePageData: (index: number, canvasData: object, domData: Record<string, DomElementState>, previewDataUrl?: string, mindmapNodes?: MindmapNodeRecord[]) => void;
+  removePage: (index: number) => void;
+  
+  addAction: (action: AgentAction) => void;
+  addMessage: (msg: ChatMessage) => void;
+  clearMessages: () => void;
+  popAction: () => AgentAction | undefined;
+  addLog: (log: string) => void;
+  clearQueue: () => void;
+  abortTask: () => void;
+  currentTaskAbortController: AbortController | null;
+  setTaskAbortController: (controller: AbortController | null) => void;
+  setViewport: (zoom: number, transform: number[]) => void;
+  
+  // DOM Element Management
+  updateDomElement: (id: string, state: Partial<DomElementState>) => void;
+  removeDomElement: (id: string) => void;
+  setDomElements: (elements: Record<string, DomElementState>) => void;
+
+  undoCanvas: () => void;
+  redoCanvas: () => void;
+  setUndoRedoFunctions: (undo: () => void, redo: () => void) => void;
+
+  currentSessionId: string | null;
+  sessionLoadTimestamp: number;
+  sessions: BoardSession[];
+  
+  loadSessions: () => Promise<void>;
+  saveCurrentSession: (title?: string) => Promise<void>;
+  createNewSession: () => void;
+  loadSessionData: (id: string) => Promise<void>;
+  deleteSession: (id: string) => Promise<void>;
+  importProjectSession: (data: any) => Promise<boolean>;
+
+  // ── Lesson Engine ──────────────────────────────────────────────────────
+  lessonPlan: LessonPlan | null;
+  activeMindmapNodes: MindmapNodeRecord[];
+  
+  // Lesson Actions
+  startLesson: (subject: string, topic: string, gradeLevel: string) => void;
+  advanceLessonPhase: () => void;
+  completeLessonStep: (stepId: string, objectIds: string[]) => void;
+  clearLesson: () => void;
+  
+  // Mindmap tracking
+  registerMindmapNode: (node: MindmapNodeRecord) => void;
+  clearMindmapNodes: () => void;
+  getMindmapNodeByText: (text: string) => MindmapNodeRecord | undefined;
+}
+
+let autoSaveTimeout: ReturnType<typeof setTimeout>;
+
+const getInitialAiPreference = (): AiPreference => {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return 'ollama';
+  const saved = localStorage.getItem('ai_preference');
+  return (saved === 'gemini' || saved === 'ollama' || saved === 'vertex' || saved === 'auto') 
+    ? (saved as AiPreference) 
+    : 'ollama';
+};
+
+const getInitialGeminiApiKey = (): string => {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return '';
+  return localStorage.getItem('gemini_api_key') || '';
+};
+
+const getInitialOllamaBaseUrl = (): string => {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return '';
+  return localStorage.getItem('ollama_base_url') || '';
+};
+
+const getInitialSelectedGeminiModel = (): string => {
+  if (typeof window === 'undefined') return STRONG_GEMMA_MODEL;
+  const saved = localStorage.getItem('selected_gemini_model');
+  if (!saved || saved.startsWith('gemini-') || /e2b/i.test(saved)) return STRONG_GEMMA_MODEL;
+  return saved;
+};
+
+const getInitialSelectedOllamaModel = (): string => {
+  if (typeof window === 'undefined') return CHALK_LOCAL_DOWNLOAD_MODEL;
+  const saved = localStorage.getItem('selected_ollama_model');
+  if (!saved || /Chalk/i.test(saved) || saved === OLLAMA_MODEL || saved === 'chalk-model:latest' || saved === 'gemma:2b' || saved === 'gemma2:2b' || saved === 'gemma4:e2b' || saved === 'qwen2.5:7b') {
+    return CHALK_LOCAL_DOWNLOAD_MODEL;
+  }
+  return saved;
+};
+
+const getInitialSelectedVertexModel = (): string => {
+  if (typeof window === 'undefined') return 'gemini-3.8-flash';
+  const saved = localStorage.getItem('selected_vertex_model');
+  if (!saved || saved === 'gemini-3.7-flash') return 'gemini-3.8-flash';
+  return saved;
+};
+
+const ENGLISH_UI_MIGRATION = 'chalk_ui_english_default_v1';
+
+const getInitialLanguage = (): SupportedLanguage => {
+  if (typeof window === 'undefined') return 'en';
+  const validLanguages: SupportedLanguage[] = ['id', 'en', 'ar', 'zh', 'fr', 'ru', 'es', 'ja', 'ko', 'de', 'pt'];
+  try {
+    // Older builds stored Indonesian as the default. Move that leftover to English once
+    // so the teacher board does not keep rendering Indonesian on the next load.
+    if (!localStorage.getItem(ENGLISH_UI_MIGRATION)) {
+      localStorage.setItem(ENGLISH_UI_MIGRATION, '1');
+      localStorage.setItem('chalk_language', 'en');
+      localStorage.setItem('Chalk-lang', 'en');
+      return 'en';
+    }
+  } catch {}
+  const saved = localStorage.getItem('chalk_language') as SupportedLanguage;
+  if (saved === 'id') {
+    try {
+      localStorage.setItem('chalk_language', 'en');
+      localStorage.setItem('Chalk-lang', 'en');
+    } catch {}
+    return 'en';
+  }
+  return (saved && validLanguages.includes(saved)) ? saved : 'en';
+};
+
+const getInitialUserName = (): string => {
+  if (typeof window === 'undefined') return 'Teacher';
+  const saved = localStorage.getItem('chalk_user_name');
+  if (!saved || saved === 'Guru') {
+    try { localStorage.setItem('chalk_user_name', 'Teacher'); } catch {}
+    return 'Teacher';
+  }
+  return saved;
+};
+
+const getInitialTranscribeMode = (): TranscribeMode => {
+  if (typeof window === 'undefined') return 'faster_whisper';
+  const saved = localStorage.getItem('chalk_transcribe_mode') as TranscribeMode;
+  if (saved === 'faster_whisper' || saved === 'record_gemini' || saved === 'gemini_live' || saved === 'upload_audio' || saved === 'webspeech') return saved;
+  return 'faster_whisper';
+};
+
+const defaultVoiceConfig: VoiceConfig = {
+  autoStopSeconds: 0, // 0 = manual continuous recording (no arbitrary 10s deadline cutoff)
+  autoSubmit: true,
+  noiseSuppression: true,
+  echoCancellation: true,
+  autoGainControl: true,
+  audioQuality: 'high',
+  language: 'id-ID',
+  silenceDetectionTimeout: 2.5
+};
+
+const getInitialVoiceConfig = (): VoiceConfig => {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return defaultVoiceConfig;
+  try {
+    const saved = localStorage.getItem('chalk_voice_config');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // Hard enforce continuous manual recording (0) - eliminate legacy 10s cutoff
+      return { ...defaultVoiceConfig, ...parsed, autoStopSeconds: 0 };
+    }
+  } catch {}
+  return defaultVoiceConfig;
+};
+
+export const defaultExperimentalConfig: ExperimentalConfig = {
+  enabled: true,
+  markmapEnabled: true,
+  mermaidEnabled: true,
+  smoothInkingEnabled: true,
+  visualTimerEnabled: true,
+  smartShapesEnabled: true,
+  attendanceEnabled: true,
+  breakTheLimitAi: true,
+  autoTaskAutomation: true,
+  jevModeEnabled: true
+};
+
+const getInitialExperimentalConfig = (): ExperimentalConfig => {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return defaultExperimentalConfig;
+  try {
+    const saved = localStorage.getItem('chalk_experimental_config');
+    if (saved) return { ...defaultExperimentalConfig, ...JSON.parse(saved) };
+  } catch {}
+  return defaultExperimentalConfig;
+};
+
+// ============================================================================
+// ZERO-COST SIZE ESTIMATOR (Replaces JSON.stringify)
+// ============================================================================
+const estimateSessionSize = (pages: AppStore['pages']): number => {
+  let bytes = 0;
+  
+  for (const page of pages) {
+    // Canvas objects estimation
+    const canvasObj = page.canvas as any;
+    if (canvasObj && canvasObj.objects) {
+      bytes += canvasObj.objects.length * 180; // avg 180 bytes/object
+    }
+    
+    // DOM elements estimation
+    if (page.dom) {
+      bytes += Object.keys(page.dom).length * 420;
+    }
+    
+    // Preview image (base64 overhead ~33%)
+    if (page.previewDataUrl) {
+      bytes += page.previewDataUrl.length * 0.75;
+    }
+    
+    // Viewport transform (negligible)
+    bytes += 48;
+  }
+  
+  return Math.max(bytes, 512); // Minimum 512 bytes
+};
+
+export const useStore = create<AppStore>((set, get) => ({
+  currentSessionId: null,
+  sessionLoadTimestamp: 0,
+  sessions: [],
+  
+  loadSessions: async () => {
+    const sessions = await getAllSessionsFromDb();
+    set({ sessions });
+  },
+  
+  saveCurrentSession: async (title) => {
+    // Snapshot current active canvas state if running in browser
+    if (typeof window !== 'undefined' && typeof (window as any).__snapshotCanvas === 'function') {
+      try {
+        (window as any).__snapshotCanvas();
+      } catch (err) {
+        console.warn('Canvas snapshot before save failed:', err);
+      }
+    }
+
+    const { currentSessionId, pages, domElements, sessions, messages, lessonPlan } = get();
+    const id = currentSessionId || Date.now().toString();
+    const now = Date.now();
+    
+    // Attempt to get a title
+    let sessionTitle = title;
+    if (!sessionTitle) {
+      if (currentSessionId) {
+        const existing = sessions.find(s => s.id === currentSessionId);
+        sessionTitle = existing?.title || 'Untitled Board';
+      } else {
+        sessionTitle = 'Untitled Board';
+      }
+    }
+
+    const session: BoardSession = {
+      id,
+      title: sessionTitle,
+      updatedAt: now,
+      createdAt: currentSessionId ? (sessions.find(s => s.id === currentSessionId)?.createdAt || now) : now,
+      thumbnail: pages[0]?.previewDataUrl || 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=500&q=80',
+      sizeBytes: estimateSessionSize(pages), // ⚡ INSTANT
+      pages: pages,
+      messages: messages,
+      lessonPlan: lessonPlan
+    };
+    
+    await saveSessionToDb(session);
+    set({ currentSessionId: id });
+    await get().loadSessions();
+  },
+  
+  createNewSession: () => {
+    set({
+      currentSessionId: null,
+      pages: [{ canvas: {}, dom: {}, previewDataUrl: '', mindmapNodes: [] }],
+      currentPageIndex: 0,
+      domElements: {},
+      messages: [{ role: 'model', text: 'Hello! A new whiteboard is ready.' }],
+      lessonPlan: null,
+      activeMindmapNodes: []
+    });
+  },
+  
+  loadSessionData: async (id) => {
+    const session = await getSessionFromDb(id);
+    if (session) {
+      const initialPage = session.pages[0];
+      set({
+        currentSessionId: session.id,
+        sessionLoadTimestamp: Date.now(),
+        pages: session.pages,
+        currentPageIndex: 0,
+        domElements: initialPage?.dom || {},
+        isHistoryOpen: false,
+        lessonPlan: session.lessonPlan || null,
+        activeMindmapNodes: initialPage?.mindmapNodes || [],
+        messages: session.messages && session.messages.length > 0 
+          ? session.messages 
+          : [{ role: 'model', text: `Loaded session "${session.title}". How can I help you?` }]
+      });
+    }
+  },
+  
+  deleteSession: async (id) => {
+    await deleteSessionFromDb(id);
+    await get().loadSessions();
+    if (get().currentSessionId === id) {
+      get().createNewSession();
+    }
+  },
+
+  importProjectSession: async (data: any) => {
+    try {
+      let pages: PageState[] = [];
+      let initialDom: Record<string, DomElementState> = {};
+      let initialMindmap: MindmapNodeRecord[] = [];
+
+      if (data.pages && Array.isArray(data.pages) && data.pages.length > 0) {
+        pages = data.pages.map((p: any) => ({
+          canvas: p.canvas || {},
+          dom: p.dom || {},
+          previewDataUrl: p.previewDataUrl || '',
+          mindmapNodes: p.mindmapNodes || []
+        }));
+        initialDom = pages[0].dom || {};
+        initialMindmap = pages[0].mindmapNodes || [];
+      } else if (data.canvas) {
+        initialDom = data.dom || {};
+        initialMindmap = data.mindmapNodes || [];
+        pages = [{
+          canvas: data.canvas,
+          dom: initialDom,
+          previewDataUrl: data.previewDataUrl || '',
+          mindmapNodes: initialMindmap
+        }];
+      } else if (data.objects || data.version) {
+        pages = [{
+          canvas: data,
+          dom: {},
+          previewDataUrl: '',
+          mindmapNodes: []
+        }];
+      } else {
+        throw new Error('Unrecognized project file format.');
+      }
+
+      const newId = `imported_${Date.now()}`;
+      set({
+        currentSessionId: newId,
+        pages,
+        currentPageIndex: 0,
+        domElements: initialDom,
+        activeMindmapNodes: initialMindmap,
+        isHistoryOpen: false,
+        lessonPlan: data.lessonPlan || null,
+        messages: Array.isArray(data.messages) && data.messages.length > 0
+          ? data.messages
+          : [{ role: 'model', text: 'Board session imported.' }]
+      });
+
+      const title = data.title || `Imported Board ${new Date().toLocaleDateString('en-US')}`;
+      await get().saveCurrentSession(title);
+      return true;
+    } catch (err) {
+      console.error('Failed to import project', err);
+      throw err;
+    }
+  },
+
+  // ── Lesson Engine State ────────────────────────────────────────────────
+  lessonPlan: null,
+  activeMindmapNodes: [],
+
+  startLesson: (subject, topic, gradeLevel) => {
+    const plan: LessonPlan = {
+      id: `lesson_${Date.now()}`,
+      subject,
+      topic,
+      gradeLevel,
+      phase: 'planning',
+      plannedSteps: [],
+      completedSteps: [],
+      createdAt: Date.now()
+    };
+    set({ lessonPlan: plan });
+  },
+
+  advanceLessonPhase: () => {
+    const { lessonPlan } = get();
+    if (!lessonPlan) return;
+    
+    const phases: LessonPhase[] = ['planning', 'intro', 'core', 'practice', 'closing'];
+    const currentIdx = phases.indexOf(lessonPlan.phase);
+    const nextPhase = phases[currentIdx + 1] || 'closing';
+    
+    set({ 
+      lessonPlan: { ...lessonPlan, phase: nextPhase }
+    });
+  },
+
+  completeLessonStep: (stepId, objectIds) => {
+    const { lessonPlan } = get();
+    if (!lessonPlan) return;
+    
+    const updatedSteps = lessonPlan.plannedSteps.map(step =>
+      step.id === stepId 
+        ? { ...step, status: 'created' as const, canvasObjectIds: objectIds }
+        : step
+    );
+    
+    set({
+      lessonPlan: {
+        ...lessonPlan,
+        plannedSteps: updatedSteps,
+        completedSteps: [...lessonPlan.completedSteps, stepId]
+      }
+    });
+  },
+
+  clearLesson: () => set({ 
+    lessonPlan: null, 
+    activeMindmapNodes: [] 
+  }),
+
+  // Mindmap node registry
+  registerMindmapNode: (node) => set((state) => {
+    const updatedNodes = [
+      // Replace if same text exists
+      ...state.activeMindmapNodes.filter(n => n.text !== node.text),
+      node
+    ];
+    const newPages = [...state.pages];
+    if (newPages[state.currentPageIndex]) {
+      newPages[state.currentPageIndex] = {
+        ...newPages[state.currentPageIndex],
+        mindmapNodes: updatedNodes
+      };
+    }
+    return { activeMindmapNodes: updatedNodes, pages: newPages };
+  }),
+
+  clearMindmapNodes: () => set((state) => {
+    const newPages = [...state.pages];
+    if (newPages[state.currentPageIndex]) {
+      newPages[state.currentPageIndex] = {
+        ...newPages[state.currentPageIndex],
+        mindmapNodes: []
+      };
+    }
+    return { activeMindmapNodes: [], pages: newPages };
+  }),
+
+  getMindmapNodeByText: (text) => {
+    const { activeMindmapNodes } = get();
+    return findMatchingMindmapNode(text, activeMindmapNodes);
+  },
+
+  cursorPosition: { x: 0, y: 0 },
+  spatialTarget: null,
+  accuracy: 100,
+  isThinking: false,
+  isActing: false,
+  isClicking: false,
+  currentAction: null,
+  agentMessage: null,
+  actionQueue: [],
+  messages: [{ role: 'model', text: 'Hello! I am Inclu AI. How can I help you today?' }],
+  logs: [],
+  inputMode: 'voice',
+  transcribeMode: getInitialTranscribeMode(),
+  setTranscribeMode: (mode) => {
+    localStorage.setItem('chalk_transcribe_mode', mode);
+    set({ transcribeMode: mode });
+  },
+  voiceConfig: getInitialVoiceConfig(),
+  setVoiceConfig: (partial) => {
+    const updated = { ...get().voiceConfig, ...partial, autoStopSeconds: 0 };
+    localStorage.setItem('chalk_voice_config', JSON.stringify(updated));
+    set({ voiceConfig: updated });
+  },
+  experimentalConfig: getInitialExperimentalConfig(),
+  setExperimentalConfig: (partial) => {
+    const updated = { ...get().experimentalConfig, ...partial };
+    localStorage.setItem('chalk_experimental_config', JSON.stringify(updated));
+    set({ experimentalConfig: updated });
+  },
+  zoom: 1,
+  viewportTransform: [1, 0, 0, 1, 0, 0],
+  domElements: {},
+  lastUploadedImage: null,
+  attachedDocument: null,
+  setAttachedDocument: (doc) => set({
+    attachedDocument: doc,
+    lastUploadedImage: doc?.dataUrl || null
+  }),
+  theme: 'light',
+  smartboardLayoutMode: (typeof window !== 'undefined' && (localStorage.getItem('chalk_layout_mode') as SmartboardLayoutMode)) || 'dock',
+  setSmartboardLayoutMode: (mode) => {
+    if (typeof window !== 'undefined') {
+      try { localStorage.setItem('chalk_layout_mode', mode); } catch {}
+    }
+    set({ smartboardLayoutMode: mode });
+  },
+  
+  isAiDrawerOpen: false,
+  toggleAiDrawer: () => set((state) => ({ isAiDrawerOpen: !state.isAiDrawerOpen, isAiModalOpen: false })),
+  isAiModalOpen: false,
+  toggleAiModal: () => set((state) => ({ isAiModalOpen: !state.isAiModalOpen, isAiDrawerOpen: false })),
+  setAiModalOpen: (open) => set((state) => ({ isAiModalOpen: open, isAiDrawerOpen: open ? false : state.isAiDrawerOpen })),
+  
+  isTimerOpen: false,
+  toggleTimer: () => set((state) => ({ isTimerOpen: !state.isTimerOpen })),
+  
+  isCalculatorOpen: false,
+  toggleCalculator: () => set((state) => ({ isCalculatorOpen: !state.isCalculatorOpen })),
+  
+  isNotesOpen: false,
+  toggleNotes: () => set((state) => ({ isNotesOpen: !state.isNotesOpen })),
+  
+  isQuizOpen: false,
+  toggleQuiz: () => set((state) => ({ isQuizOpen: !state.isQuizOpen })),
+  
+  isUnitConverterOpen: false,
+  toggleUnitConverter: () => set((state) => ({ isUnitConverterOpen: !state.isUnitConverterOpen })),
+  
+  isPeriodicTableOpen: false,
+  togglePeriodicTable: () => set((state) => ({ isPeriodicTableOpen: !state.isPeriodicTableOpen })),
+  
+  isAttendanceOpen: false,
+  toggleAttendance: () => set((state) => ({ isAttendanceOpen: !state.isAttendanceOpen })),
+  
+  isTodoListOpen: false,
+  toggleTodoList: () => set((state) => ({ isTodoListOpen: !state.isTodoListOpen })),
+  
+  toggleSpinWheel: () => {
+    const id = `wheel_${Date.now()}`;
+    get().updateDomElement(id, {
+      id,
+      html: '<div>Wheel</div>',
+      componentType: 'SPIN_WHEEL',
+      config: { title: 'Random Student Wheel' },
+      x: 960,
+      y: 540,
+      width: 440,
+      height: 480,
+      scaleX: 1,
+      scaleY: 1,
+      rotation: 0,
+      zIndex: 10
+    });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('addCanvasPlaceholder', {
+        detail: { id, x: 960, y: 540, width: 440, height: 480 }
+      }));
+    }
+  },
+
+  toggleScoreboard: () => {
+    const id = `score_${Date.now()}`;
+    get().updateDomElement(id, {
+      id,
+      html: '<div>Score</div>',
+      componentType: 'SCOREBOARD',
+      config: { title: 'Group Scoreboard' },
+      x: 960,
+      y: 540,
+      width: 420,
+      height: 380,
+      scaleX: 1,
+      scaleY: 1,
+      rotation: 0,
+      zIndex: 10
+    });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('addCanvasPlaceholder', {
+        detail: { id, x: 960, y: 540, width: 420, height: 380 }
+      }));
+    }
+  },
+
+  toggleMathGraph: () => {
+    const id = `math_${Date.now()}`;
+    get().updateDomElement(id, {
+      id,
+      html: '<div>Grafik</div>',
+      componentType: 'MATH_GRAPH',
+      config: { title: 'Grafik Matematika Interaktif', type: 'QUADRATIC', a: 1, b: -2, c: -3 },
+      x: 960,
+      y: 540,
+      width: 460,
+      height: 440,
+      scaleX: 1,
+      scaleY: 1,
+      rotation: 0,
+      zIndex: 10
+    });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('addCanvasPlaceholder', {
+        detail: { id, x: 960, y: 540, width: 460, height: 440 }
+      }));
+    }
+  },
+  
+  isAssistiveMode: typeof window !== 'undefined' && localStorage.getItem('chalk_assistive_mode') === 'true',
+  toggleAssistiveMode: (enabled) => set((state) => {
+    const nextVal = enabled !== undefined ? enabled : !state.isAssistiveMode;
+    if (typeof window !== 'undefined') localStorage.setItem('chalk_assistive_mode', String(nextVal));
+    return { isAssistiveMode: nextVal };
+  }),
+  isHandsFreeListening: false,
+  setHandsFreeListening: (active) => set({ isHandsFreeListening: active }),
+  lastVoiceCommand: null,
+  setLastVoiceCommand: (cmd) => set({ lastVoiceCommand: cmd }),
+  
+  isBoardSettingsOpen: false,
+  toggleBoardSettings: () => set((state) => ({ isBoardSettingsOpen: !state.isBoardSettingsOpen })),
+
+  isHistoryOpen: false,
+  toggleHistory: () => set((state) => ({ isHistoryOpen: !state.isHistoryOpen })),
+  
+  userName: getInitialUserName(),
+  setUserName: (name) => {
+    const trimmed = name.trim() || 'Teacher';
+    localStorage.setItem('chalk_user_name', trimmed);
+    set({ userName: trimmed });
+  },
+
+  language: getInitialLanguage(),
+  setLanguage: (lang) => {
+    const next = lang === 'id' ? 'en' : lang;
+    localStorage.setItem('chalk_language', next);
+    try { localStorage.setItem('Chalk-lang', next); } catch {}
+    set({ language: next });
+  },
+
+  aiPreference: getInitialAiPreference(),
+  setAiPreference: (pref) => {
+    localStorage.setItem('ai_preference', pref);
+    set({ aiPreference: pref });
+  },
+
+  geminiApiKey: getInitialGeminiApiKey(),
+  setGeminiApiKey: (key) => {
+    localStorage.setItem('gemini_api_key', key);
+    set({ geminiApiKey: key });
+  },
+
+  ollamaBaseUrl: getInitialOllamaBaseUrl(),
+  setOllamaBaseUrl: (url) => {
+    localStorage.setItem('ollama_base_url', url);
+    set({ ollamaBaseUrl: url });
+  },
+
+  selectedGeminiModel: getInitialSelectedGeminiModel(),
+  setSelectedGeminiModel: (model) => {
+    localStorage.setItem('selected_gemini_model', model);
+    set({ selectedGeminiModel: model });
+  },
+
+  selectedOllamaModel: getInitialSelectedOllamaModel(),
+  setSelectedOllamaModel: (model) => {
+    localStorage.setItem('selected_ollama_model', model);
+    set({ selectedOllamaModel: model });
+  },
+
+  selectedVertexModel: getInitialSelectedVertexModel(),
+  setSelectedVertexModel: (model) => {
+    localStorage.setItem('selected_vertex_model', model);
+    set({ selectedVertexModel: model });
+  },
+
+  isViewerUrl: false,
+
+  setIsViewerUrl: (v) => set({ isViewerUrl: v }),
+
+  classRoster: [],
+  setClassRoster: (classRoster) => set({ classRoster }),
+  questList: null,
+  setQuestList: (questList) => set((state) => {
+    const same = state.questList?.liveQuestId === questList.liveQuestId;
+    return {
+      questList,
+      questTally: same ? state.questTally : null,
+      questScores: questList.liveClosed && same ? state.questScores : null,
+    };
+  }),
+  questTally: null,
+  setQuestTally: (questTally) => set((state) => {
+    if (state.questList?.liveQuestId && questTally.questId !== state.questList.liveQuestId) return state;
+    if (state.questList?.liveClosed) return state;
+    return { questTally };
+  }),
+  questScores: null,
+  setQuestScores: (questScores) => set((state) => {
+    if (state.questList?.liveQuestId && questScores.questId !== state.questList.liveQuestId) return state;
+    return { questScores, questTally: null };
+  }),
+  studentQuestions: [],
+  setStudentQuestions: (studentQuestions) => set({
+    studentQuestions: Array.isArray(studentQuestions) ? studentQuestions : [],
+  }),
+  addStudentQuestion: (ask) => set((state) => {
+    if (state.studentQuestions.some((row) => row.id === ask.id)) return state;
+    return { studentQuestions: [...state.studentQuestions, ask].slice(-30) };
+  }),
+  updateStudentAnswer: (id, answer) => set((state) => ({
+    studentQuestions: state.studentQuestions.map((row) => (
+      row.id === id ? { ...row, answer } : row
+    )),
+  })),
+  
+  chatInputText: '',
+  setChatInputText: (txt: string) => set({ chatInputText: txt }),
+  interimInputText: '',
+  setInterimInputText: (txt: string) => set({ interimInputText: txt }),
+  isVoiceListening: false,
+  setVoiceListening: (listening: boolean) => set({ isVoiceListening: listening }),
+  
+  // Creator Defaults
+  isCreatorMode: false,
+  activeTool: 'SELECT',
+  isShapeFilled: false,
+  brushColor: '#6B4423',
+  brushWidth: 3,
+  fontFamily: 'Inter',
+  fontSize: 24,
+  
+  pages: [{ canvas: {}, dom: {}, previewDataUrl: '', mindmapNodes: [] }],
+  currentPageIndex: 0,
+  
+  addPage: (emptyState, previewDataUrl) => set((state) => {
+    const updatedPages = [...state.pages];
+    if (updatedPages[state.currentPageIndex]) {
+      updatedPages[state.currentPageIndex] = {
+        ...updatedPages[state.currentPageIndex],
+        dom: state.domElements,
+        mindmapNodes: state.activeMindmapNodes
+      };
+    }
+    const newPages = [...updatedPages, { canvas: emptyState || {}, dom: {}, previewDataUrl: previewDataUrl || '', mindmapNodes: [] }];
+    return { pages: newPages, currentPageIndex: newPages.length - 1, activeMindmapNodes: [], domElements: {} };
+  }),
+  switchPage: (index) => set((state) => {
+    if (index >= 0 && index < state.pages.length && index !== state.currentPageIndex) {
+      const updatedPages = [...state.pages];
+      if (updatedPages[state.currentPageIndex]) {
+        updatedPages[state.currentPageIndex] = {
+          ...updatedPages[state.currentPageIndex],
+          dom: state.domElements,
+          mindmapNodes: state.activeMindmapNodes
+        };
+      }
+      const targetPage = updatedPages[index];
+      return { 
+        pages: updatedPages,
+        currentPageIndex: index,
+        activeMindmapNodes: targetPage?.mindmapNodes || [],
+        domElements: targetPage?.dom || {}
+      };
+    }
+    return {};
+  }),
+  updatePageData: (index, canvasData, domData, previewDataUrl, mindmapNodes) => set((state) => {
+    const newPages = [...state.pages];
+    const oldUrl = newPages[index]?.previewDataUrl;
+    const currentNodes = mindmapNodes !== undefined ? mindmapNodes : (newPages[index]?.mindmapNodes || state.activeMindmapNodes);
+    newPages[index] = { 
+      canvas: canvasData, 
+      dom: domData, 
+      previewDataUrl: previewDataUrl !== undefined ? previewDataUrl : oldUrl,
+      mindmapNodes: currentNodes
+    };
+    
+    // Auto-save logic
+    if (state.currentSessionId) {
+      clearTimeout(autoSaveTimeout);
+      autoSaveTimeout = setTimeout(() => {
+         get().saveCurrentSession();
+      }, CONFIG.ui.autoSaveDebounceMs);
+    }
+    
+    return { pages: newPages };
+  }),
+  removePage: (index) => set((state) => {
+    if (state.pages.length <= 1) return {};
+    const newPages = [...state.pages];
+    newPages.splice(index, 1);
+    let newIndex = state.currentPageIndex;
+    if (newIndex >= newPages.length) newIndex = newPages.length - 1;
+    return { 
+      pages: newPages, 
+      currentPageIndex: newIndex,
+      activeMindmapNodes: newPages[newIndex]?.mindmapNodes || [],
+      domElements: newPages[newIndex]?.dom || {}
+    };
+  }),
+
+  setInputMode: (mode) => set({ inputMode: mode }),
+  setCursorPosition: (pos) => set({ cursorPosition: pos }),
+  setSpatialTarget: (pos) => set({ spatialTarget: pos }),
+  setAccuracy: (val) => set({ accuracy: val }),
+  setThinking: (thinking) => set({ isThinking: thinking }),
+  setActing: (acting) => set({ isActing: acting }),
+  setClicking: (clicking) => set({ isClicking: clicking }),
+  setCurrentAction: (action) => set({ currentAction: action }),
+  setAgentMessage: (msg) => set({ agentMessage: msg }),
+  setLastUploadedImage: (img) => set((state) => ({
+    lastUploadedImage: img,
+    attachedDocument: img ? state.attachedDocument : null
+  })),
+  toggleTheme: () => set((state) => {
+    const newTheme = state.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.className = newTheme;
+    return { theme: newTheme };
+  }),
+
+  
+  toggleCreatorMode: () => set((state) => ({ isCreatorMode: !state.isCreatorMode })),
+  setActiveTool: (tool) => set({ activeTool: tool }),
+  setShapeFilled: (filled) => set({ isShapeFilled: filled }),
+  setFontFamily: (font) => set({ fontFamily: font }),
+  setFontSize: (size) => set({ fontSize: size }),
+  setBrushColor: (color) => set({ brushColor: color }),
+  setBrushWidth: (width) => set({ brushWidth: width }),
+  
+  addAction: (action) => set((state) => ({ actionQueue: [...state.actionQueue, action] })),
+  
+  popAction: () => {
+    const state = get();
+    if (state.actionQueue.length === 0) return undefined;
+    const [next, ...rest] = state.actionQueue;
+    set({ actionQueue: rest });
+    return next;
+  },
+
+  addMessage: (msg) => set((state) => ({ messages: [...state.messages, msg] })),
+  
+  clearMessages: () => set({ messages: [{ role: 'model', text: 'Hello! I am Inclu AI. How can I help you today?' }] }),
+  
+  addLog: (log) => set((state) => {
+    const newLogs = [log, ...state.logs].slice(0, 50);
+    return { logs: newLogs };
+  }),
+
+  clearQueue: () => set({ actionQueue: [] }),
+  
+  currentTaskAbortController: null,
+  setTaskAbortController: (controller) => set({ currentTaskAbortController: controller }),
+
+  abortTask: () => {
+    const state = get();
+    if (state.currentTaskAbortController) {
+      try {
+        state.currentTaskAbortController.abort();
+      } catch {}
+    }
+    window.speechSynthesis.cancel();
+    set({ 
+      currentTaskAbortController: null,
+      actionQueue: [], 
+      isThinking: false, 
+      isActing: false, 
+      currentAction: null,
+      agentMessage: 'Task cancelled by user.' 
+    });
+  },
+
+  setViewport: (zoom, transform) => set({ zoom, viewportTransform: transform }),
+
+  updateDomElement: (id, newState) => set((state) => {
+    const existing = state.domElements[id] || {};
+    const newDomElements = {
+      ...state.domElements,
+      [id]: { ...existing, ...newState } as DomElementState
+    };
+    const newPages = [...state.pages];
+    if (newPages[state.currentPageIndex]) {
+       newPages[state.currentPageIndex] = {
+         ...newPages[state.currentPageIndex],
+         dom: newDomElements
+       };
+    }
+    return {
+      domElements: newDomElements,
+      pages: newPages
+    };
+  }),
+
+  removeDomElement: (id) => set((state) => {
+    const newElements = { ...state.domElements };
+    delete newElements[id];
+    const newPages = [...state.pages];
+    if (newPages[state.currentPageIndex]) {
+       newPages[state.currentPageIndex] = {
+         ...newPages[state.currentPageIndex],
+         dom: newElements
+       };
+    }
+    return { domElements: newElements, pages: newPages };
+  }),
+
+  setDomElements: (elements) => set({ domElements: elements }),
+  undoCanvas: () => {},
+  redoCanvas: () => {},
+  setUndoRedoFunctions: (undo, redo) => set({ undoCanvas: undo, redoCanvas: redo }),
+}));
