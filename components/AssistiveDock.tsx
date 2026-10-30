@@ -105,7 +105,7 @@ export const AssistiveDock: React.FC = () => {
                 />
               ))}
             </span>
-            <span className="truncate">{interimCaption ? `“${interimCaption}”` : 'Hands-free: "Chalk, ..."'}</span>
+            <span className="truncate">{interimCaption ? `“${interimCaption}”` : 'Hands-free: "Inclu, ..."'}</span>
           </motion.div>
         )}
       </AnimatePresence>

@@ -273,8 +273,9 @@ export function useAmbientListener(options: UseAmbientListenerOptions = {}) {
           id: 'id-ID', en: 'en-US', ar: 'ar-SA', zh: 'zh-CN', fr: 'fr-FR',
           ru: 'ru-RU', es: 'es-ES', ja: 'ja-JP', ko: 'ko-KR', de: 'de-DE', pt: 'pt-BR'
         };
-        const activeLang = useStore.getState().language || 'id';
-        recognition.lang = langLocaleMap[activeLang] || 'id-ID';
+        const voiceLang = useStore.getState().voiceConfig?.language;
+        const activeLang = useStore.getState().language || 'en';
+        recognition.lang = voiceLang || langLocaleMap[activeLang] || 'en-US';
 
         recognition.onresult = (event: any) => {
           let interim = '';
@@ -346,7 +347,7 @@ export function useAmbientListener(options: UseAmbientListenerOptions = {}) {
 
       setHandsFreeListening(true);
       sounds.play('mic_on');
-      toast.info('🎙️ Hands-free mode is on — say "Chalk, ..."');
+      toast.info('🎙️ Hands-free mode is on — say "Inclu, ..."');
     } catch (err) {
       logger.error('[Ambient Listener] Failed to start microphone', err);
       toast.error('Could not access the microphone for hands-free mode.');

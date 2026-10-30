@@ -9,8 +9,9 @@ import { layoutMindmap, expandMindmapNodes, findMatchingMindmapNode, NODE_STYLE_
 import { sanitizeMermaidCode, cleanMermaidNodeLabel } from '../utils/mermaidSanitizer';
 import { isQuestCommand } from '../utils/questSchema';
 import { algorithmLesson } from '../utils/algorithmTrace';
-import { equationLine, equationMarkdown, isNewPageRequest, penFontSize, penLine } from '../utils/boardIntent';
+import { equationLine, equationMarkdown, isNewPageRequest, penFontSize, penLine, writeTextIntent } from '../utils/boardIntent';
 import { visiblePageFrame } from '../utils/boardScroll';
+import { STANDARD_FONT_SIZES, resolveFontSize } from '../constants';
 
 const logger = createLogger('gemini-brain');
 
@@ -66,7 +67,7 @@ export interface JevReflexResult {
   lockIntent?: 'modification' | 'creation' | 'question';
   targetObjectId?: string;
   /** Handwriting or an equation placed directly on the canvas. */
-  canvasText?: { text: string; fontFamily?: string };
+  canvasText?: { text: string; fontFamily?: string; fontSize?: number };
   /** A lesson card, used for equations, pen pages, and algorithm traces. */
   lessonDocument?: { title: string; markdown: string; handwriting?: boolean };
 }
@@ -134,9 +135,9 @@ export function normalizeSpokenNumbers(input: string): string {
 export function stripConversationalPrefix(input: string): string {
   return input
     .trim()
-    .replace(/^(?:(?:hai|halo|hey|ok|oke|permisi|pak|bu)\s+)?(?:Chalk[,.!?\s]+)?(?:(?:tolong|coba|bisa|mohon|please|can\s+you|could\s+you|bantu(?:\s+saya)?)\s+)+/i, '')
-    .replace(/^(?:hai|halo|hey|ok|oke)\s+Chalk[,.!?\s]*/i, '')
-    .replace(/^Chalk[,.!?\s]+/i, '')
+    .replace(/^(?:(?:hai|halo|hey|ok|oke|permisi|pak|bu)\s+)?(?:Chalk|Inclu)[,.!?\s]+(?:(?:tolong|coba|bisa|mohon|please|can\s+you|could\s+you|bantu(?:\s+saya)?)\s+)+/i, '')
+    .replace(/^(?:hai|halo|hey|ok|oke)\s+(?:Chalk|Inclu)[,.!?\s]*/i, '')
+    .replace(/^(?:Chalk|Inclu)[,.!?\s]+/i, '')
     .trim();
 }
 
@@ -174,6 +175,18 @@ export function evaluateJevSystemOne(
       actionTaken: 'WRITE_WITH_PEN',
       message: 'Written with the pen. Scroll the page to read it.',
       lessonDocument: { title: 'Written with the pen', markdown: pen, handwriting: true },
+    };
+  }
+  const writeText = writeTextIntent(prompt);
+  if (writeText) {
+    return {
+      handled: true,
+      actionTaken: 'WRITE_TEXT',
+      message: `"${writeText.text}" written on the whiteboard (${writeText.sizeName} font, ${writeText.fontSize}px).`,
+      canvasText: {
+        text: writeText.text,
+        fontSize: writeText.fontSize,
+      },
     };
   }
   if (/^(?:open|show|start|use)\s+(?:the\s+)?quiz\b/i.test(norm)) {
@@ -589,16 +602,23 @@ export const useGeminiBrain = () => {
           }));
         }
         if (jevResult.canvasText?.text) {
+          const vpt = canvas?.viewportTransform || [1, 0, 0, 1, 0, 0];
+          const zoom = canvas?.getZoom() || 1;
+          const canvasW = canvas?.width || 1920;
+          const canvasH = canvas?.height || 1080;
+          const centerX = Math.round((-vpt[4] + canvasW / 2) / zoom);
+          const centerY = Math.round((-vpt[5] + canvasH / 2) / zoom);
+          const resolvedSize = jevResult.canvasText.fontSize || STANDARD_FONT_SIZES.medium.whiteboardPx;
           addAction({
             id: `ink_${Date.now()}`,
             type: 'WRITE_TEXT',
             payload: {
               text: jevResult.canvasText.text,
-              x: 980,
-              y: 280,
-              fontSize: 40,
-              fontFamily: jevResult.canvasText.fontFamily,
-              color: '#1F2937',
+              x: centerX,
+              y: centerY,
+              fontSize: resolvedSize,
+              fontFamily: jevResult.canvasText.fontFamily || storeState.fontFamily || 'Inter',
+              color: storeState.theme === 'dark' ? '#FBF6F0' : '#1F2937',
             },
             status: 'PENDING',
           });
@@ -1022,10 +1042,17 @@ ${jevDirective}
         } else if (call.name === 'add_text_label') {
           actionType = 'WRITE_TEXT';
           const pos = getGridPos(args.gridPosition);
-          let fontSize = 24;
-          if (args.size === 'TITLE') fontSize = 48;
-          if (args.size === 'SUBTITLE') fontSize = 32;
-          payload = { text: args.text, x: pos.x, y: pos.y, fontSize, color: '#000000' };
+          const customSize = typeof args.fontSize === 'number' ? args.fontSize : undefined;
+          const fontSize = resolveFontSize(customSize || args.size, 'whiteboard');
+          const defaultColor = useStore.getState().theme === 'dark' ? '#FBF6F0' : '#1F2937';
+          payload = {
+            text: args.text,
+            x: pos.x,
+            y: pos.y,
+            fontSize,
+            fontFamily: useStore.getState().fontFamily || 'Inter',
+            color: args.color || defaultColor
+          };
 
         } else if (call.name === 'write_with_pen') {
           actionType = 'RENDER_HTML';
