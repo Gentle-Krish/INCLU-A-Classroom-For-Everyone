@@ -607,10 +607,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ canvasRef }) => {
               } catch (err: any) {
                 console.error("Transcription error:", err);
                 const isOfflineOllama = storeState.aiPreference === 'ollama' || (typeof navigator !== 'undefined' && !navigator.onLine);
+                if (storeState.transcribeMode === 'faster_whisper') {
+                  useStore.getState().setTranscribeMode('webspeech');
+                }
                 const message = err?.speechBusy
                   ? (err.message || SPEECH_TYPE_MESSAGE)
                   : isOfflineOllama
-                    ? 'AI audio transcription needs an internet connection (Gemini Cloud Audio). The local Ollama model on this laptop handles text and tools offline. Please type a command in the input field.'
+                    ? 'Switched to browser speech recognition (Web Speech). Please click the mic again to speak!'
                     : (String(err?.message || '').startsWith("Couldn't transcribe speech:")
                         ? err.message
                         : `Couldn't transcribe speech: ${err?.message || String(err)}`);

@@ -287,10 +287,10 @@ const getInitialUserName = (): string => {
 };
 
 const getInitialTranscribeMode = (): TranscribeMode => {
-  if (typeof window === 'undefined') return 'faster_whisper';
+  if (typeof window === 'undefined') return 'webspeech';
   const saved = localStorage.getItem('chalk_transcribe_mode') as TranscribeMode;
   if (saved === 'faster_whisper' || saved === 'record_gemini' || saved === 'gemini_live' || saved === 'upload_audio' || saved === 'webspeech') return saved;
-  return 'faster_whisper';
+  return 'webspeech';
 };
 
 const defaultVoiceConfig: VoiceConfig = {
