@@ -96,10 +96,10 @@ export const ProcessingStatusHud: React.FC<ProcessingStatusHudProps> = ({ onCanc
           </div>
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-1.5">
-              <span className="font-extrabold text-[13px] text-[#3F2A1D] tracking-tight truncate">
-                {language === 'en' ? 'Chalk is working' : 'Chalk is working'}
+              <span className="font-extrabold text-[13px] text-[#3F2A1D] tracking-tight shrink-0">
+                Inclu is working
               </span>
-              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-[#F4B183]/35 text-[#3F2A1D] border border-[#E7DDD2] truncate">
+              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-[#F4B183]/35 text-[#3F2A1D] border border-[#E7DDD2] truncate max-w-[140px]">
                 {activeModel}
               </span>
             </div>

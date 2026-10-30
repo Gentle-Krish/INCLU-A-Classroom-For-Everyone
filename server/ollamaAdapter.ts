@@ -299,8 +299,11 @@ export const generateAgentActionsOllama = async (
     messages: messages,
     tools: mappedTools,
     stream: false,
+    keep_alive: "24h",
     options: {
-      num_ctx: CONFIG.ai.ollama.numCtx
+      num_ctx: CONFIG.ai.ollama.numCtx || 4096,
+      num_predict: 512,
+      temperature: 0.1
     }
   };
 
@@ -347,8 +350,10 @@ export const generateAgentActionsOllama = async (
           userMessage
         ],
         stream: false,
+        keep_alive: "24h",
         options: {
-          num_ctx: 16384,
+          num_ctx: CONFIG.ai.ollama.numCtx || 4096,
+          num_predict: 512,
           temperature: 0.15,
           repeat_penalty: 1.05
         }

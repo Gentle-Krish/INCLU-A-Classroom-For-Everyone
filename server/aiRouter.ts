@@ -601,12 +601,144 @@ aiRouter.post("/quest", async (req, res) => {
   }
 });
 
+export const matchFastInteractiveCommand = (prompt?: string): { textResponse: string; functionCalls: any[] } | null => {
+  if (!prompt || typeof prompt !== 'string') return null;
+  const clean = prompt.trim().toLowerCase();
+
+  // If prompt asks to teach, explain, create diagrams, mindmaps, or combines actions with conjunctions, let the LLM handle it
+  if (/(mindmap|mind\s*map|diagram|explain|teach|summarize|lesson|concept|photosynthesis|history|science|math|formula|\band\b|\bthen\b)/i.test(clean)) {
+    return null;
+  }
+
+  // 1. Timer commands: e.g. "start a 5 minute timer", "set timer for 10 minutes", "timer 5 min", "start 5 minute timer"
+  const timerMatch = clean.match(/(?:start|set|create|put|add)?\s*(?:a\s*)?(\d+)\s*(minute|min|m|second|sec|s)?\s*timer/i)
+    || clean.match(/timer\s*(?:for\s*)?(\d+)\s*(minute|min|m|second|sec|s)?/i);
+
+  if (timerMatch) {
+    const amount = parseInt(timerMatch[1], 10);
+    const unit = timerMatch[2] ? timerMatch[2].toLowerCase() : 'm';
+    const isSeconds = unit.startsWith('s');
+    const totalSeconds = isSeconds ? amount : amount * 60;
+    const label = isSeconds ? `${amount}-second` : `${amount}-minute`;
+
+    return {
+      textResponse: `Started a ${label} timer on the smartboard.`,
+      functionCalls: [
+        {
+          name: "add_component",
+          args: {
+            componentType: "TIMER",
+            title: `${label} Timer`,
+            gridPosition: "TOP_RIGHT",
+            config: {
+              mode: "TIMER",
+              seconds: totalSeconds,
+              isRunning: true,
+              isVisualPie: true
+            }
+          }
+        }
+      ]
+    };
+  }
+
+  // 2. Calculator: "open calculator", "show calculator", "start calculator", "calculator"
+  if (/^(?:open|show|start|launch|bring up)?\s*calculator$/i.test(clean)) {
+    return {
+      textResponse: "Opened the interactive calculator on the smartboard.",
+      functionCalls: [
+        {
+          name: "add_component",
+          args: {
+            componentType: "CALCULATOR",
+            title: "Calculator",
+            gridPosition: "CENTER_RIGHT"
+          }
+        }
+      ]
+    };
+  }
+
+  // 3. Attendance: "take attendance", "open attendance", "show attendance", "attendance"
+  if (/^(?:take|open|show|start|view)?\s*attendance(?:\s*roster)?$/i.test(clean)) {
+    return {
+      textResponse: "Opened the class attendance roster on the smartboard.",
+      functionCalls: [
+        {
+          name: "add_component",
+          args: {
+            componentType: "ATTENDANCE",
+            title: "Class Attendance",
+            gridPosition: "TOP_LEFT"
+          }
+        }
+      ]
+    };
+  }
+
+  // 4. Quick Notes: "open notes", "take notes", "show notes", "quick notes"
+  if (/^(?:open|show|start|take)?\s*(?:quick\s*)?notes$/i.test(clean)) {
+    return {
+      textResponse: "Opened lesson notes on the smartboard.",
+      functionCalls: [
+        {
+          name: "add_component",
+          args: {
+            componentType: "MARKDOWN_NOTE",
+            title: "Lesson Notes",
+            gridPosition: "BOTTOM_CENTER",
+            config: {
+              content: "# Lesson Notes\n\n- Key points for today's session:\n  - "
+            }
+          }
+        }
+      ]
+    };
+  }
+
+  // 5. Clear Board: "clear board", "clear canvas", "clean the whiteboard"
+  if (/^(?:clear|clean|reset|wipe)\s*(?:the\s*)?(?:board|whiteboard|canvas|screen)$/i.test(clean)) {
+    return {
+      textResponse: "Cleared the smartboard canvas.",
+      functionCalls: [
+        {
+          name: "clear_canvas",
+          args: {}
+        }
+      ]
+    };
+  }
+
+  return null;
+};
+
 aiRouter.post("/generate", async (req, res) => {
   const startTime = Date.now();
   const { prompt, canvasImageBase64, canvasObjects, viewport, highResInputImage, history, pageContext, domElements, aiPreference, geminiApiKey, ollamaBaseUrl, selectedGeminiModel, selectedOllamaModel, selectedVertexModel, intent, forceTools, lessonContext, sessionId } = req.body;
   const activeSessionId = sessionId || (req.headers['x-session-id'] as string) || 'session_default';
   let activeMode: 'vertex' | 'gemini' | 'ollama' | 'unknown' = 'unknown';
   let activeModel = 'unknown';
+
+  // Fast-Path Deterministic Reflex for Direct Classroom Commands (<10ms instant response)
+  const fastReflex = matchFastInteractiveCommand(prompt);
+  if (fastReflex) {
+    telemetryService.recordEvent({
+      sessionId: activeSessionId,
+      endpoint: '/api/ai/generate',
+      provider: 'ollama',
+      model: 'instant-dispatcher',
+      prompt: prompt || '',
+      promptTokens: 8,
+      outputTokens: 32,
+      latencyMs: Date.now() - startTime,
+      status: 'success'
+    });
+    return res.json({
+      ...fastReflex,
+      mode: 'ollama',
+      model: 'instant-reflex'
+    });
+  }
 
   try {
     const configuredMode = getRuntimePreference(aiPreference);
