@@ -13,7 +13,7 @@ import { useTranslation, SUPPORTED_LANGUAGES } from '../utils/translations';
 import { SupportedLanguage } from '../types';
 import { getTelemetryDownloadUrl } from '../services/aiService';
 import { useAiStatus } from '../hooks/useAiStatus';
-import { CHALK_LOCAL_BASE_MODEL, CHALK_LOCAL_DOWNLOAD_MODEL, STRONG_GEMMA_MODEL } from '../constants';
+import { CHALK_LOCAL_BASE_MODEL, CHALK_LOCAL_DOWNLOAD_MODEL, GEMINI_MODEL, STRONG_GEMMA_MODEL } from '../constants';
 import {
   OllamaNotInstalledError,
   probeLocalModel,
@@ -81,8 +81,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ isOpen = true, onClo
   const [localKey, setLocalKey] = useState(geminiApiKey);
   const [localOllamaUrl, setLocalOllamaUrl] = useState(ollamaBaseUrl || 'http://localhost:11434');
   const [localGeminiModel, setLocalGeminiModel] = useState(() => {
-    if (!selectedGeminiModel || selectedGeminiModel.startsWith('gemini-') || /e2b/i.test(selectedGeminiModel)) {
-      return STRONG_GEMMA_MODEL;
+    if (!selectedGeminiModel || /e2b|inclu-gemma/i.test(selectedGeminiModel)) {
+      return GEMINI_MODEL;
     }
     return selectedGeminiModel;
   });
@@ -626,7 +626,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ isOpen = true, onClo
                         className={inputCls}
                       >
                         {isGeminiMode ? (
-                          <option value={STRONG_GEMMA_MODEL}>gemma-4-31b-it</option>
+                          <>
+                            <option value="gemini-3.8-flash">gemini-3.8-flash (Frontier Ultra-Fast Multimodal - Recommended)</option>
+                            <option value="gemini-2.5-flash">gemini-2.5-flash (Fast & Efficient)</option>
+                            <option value="gemini-2.5-pro">gemini-2.5-pro (Deep Reasoning)</option>
+                            <option value={STRONG_GEMMA_MODEL}>gemma-4-31b-it (Google Gemma 31B)</option>
+                          </>
                         ) : (
                           <>
                             <option value="gemini-3.8-flash">gemini-3.8-flash (Frontier Ultra-Fast Multimodal)</option>

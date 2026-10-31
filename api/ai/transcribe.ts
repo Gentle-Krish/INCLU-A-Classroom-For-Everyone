@@ -1,4 +1,4 @@
-import { STRONG_GEMMA_MODEL } from '../../constants';
+import { GEMINI_MODEL, STRONG_GEMMA_MODEL } from '../../constants';
 
 const SPEECH_TYPE_MESSAGE = 'Speech could not be heard. Type the question.';
 
@@ -21,11 +21,11 @@ const isQuota = (status: number, message: string) => {
 };
 
 const modelForSavedKey = (selected: unknown): string => {
-  if (typeof selected === 'string') {
+  if (typeof selected === 'string' && selected.trim()) {
     const name = selected.trim();
-    if (name.startsWith('gemma-') && !/e2b/i.test(name)) return name;
+    if (!/e2b|inclu-gemma/i.test(name)) return name;
   }
-  return STRONG_GEMMA_MODEL;
+  return process.env.GEMINI_MODEL || GEMINI_MODEL;
 };
 
 const busy = (res: any, code: 'rate_limited' | 'missing_key') => res.status(code === 'missing_key' ? 503 : 429).json({

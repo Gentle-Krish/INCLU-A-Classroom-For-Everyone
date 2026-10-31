@@ -271,6 +271,7 @@ export interface ClientToServerEvents {
   'dom-elements-update': (payload: { roomId: string; domElements: Record<string, DomElementState> }) => void;
   // Phone joins the class. Does not receive canvas state.
   'student-hello': (payload: { roomId: string; studentId: string; displayName: string }) => void;
+  'canvas-request': () => void;
   // Teacher starts the class for phones already in the room.
   'start-class': (roomId: string) => void;
   // Teacher publishes a quest written on this laptop. The phone cannot send this.

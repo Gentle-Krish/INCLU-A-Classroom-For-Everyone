@@ -22,7 +22,7 @@ export default async function handler(req: any, res: any) {
     const hasVertex = Boolean(vertexProjectId);
     const hasGemini = Boolean(process.env.GEMINI_API_KEY || body.geminiApiKey);
 
-    const mode = hasVertex ? 'vertex' : hasGemini ? 'gemini' : 'unavailable';
+    const mode = hasGemini ? 'gemini' : hasVertex ? 'vertex' : 'unavailable';
     const model = mode === 'vertex' ? vertexModel : geminiModel;
 
     return res.status(200).json({

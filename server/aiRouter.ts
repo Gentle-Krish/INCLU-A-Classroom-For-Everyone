@@ -22,7 +22,7 @@ import {
   transcribeAudioWhisper,
   isWhisperAvailable
 } from "./whisperAdapter";
-import { CONFIG, CHALK_LOCAL_BASE_MODEL, CHALK_LOCAL_DOWNLOAD_MODEL, OLLAMA_MODEL, STRONG_GEMMA_MODEL } from "../constants";
+import { CONFIG, CHALK_LOCAL_BASE_MODEL, CHALK_LOCAL_DOWNLOAD_MODEL, GEMINI_MODEL, OLLAMA_MODEL, STRONG_GEMMA_MODEL } from "../constants";
 import { QuestWriteError, questResponseIsSafe, writeQuestOnLaptop } from "./questWriter";
 import { speechProviders } from "../utils/speechRoute";
 import { boardProviders, isGeminiBlocked, localModelName, noteGeminiFailure } from "../utils/aiRoute";
@@ -57,8 +57,10 @@ const getRuntimePreference = (preference?: unknown): AiPreference => (
 );
 
 const getPreferredAutoMode = (): AiMode => {
+  // Prefer Gemini cloud when an API key is available (no GCP project needed)
+  if (process.env.GEMINI_API_KEY || process.env.API_KEY) return 'gemini';
   if (process.env.GOOGLE_CLOUD_PROJECT || process.env.VERTEX_PROJECT_ID || CONFIG.ai.vertex.projectId) return 'vertex';
-  return process.env.GEMINI_API_KEY || process.env.API_KEY ? 'gemini' : 'ollama';
+  return 'ollama';
 };
 
 const getOllamaUrl = () => process.env.OLLAMA_BASE_URL || process.env.OLLAMA_URL || CONFIG.ai.ollama.defaultBaseUrl;
@@ -171,10 +173,6 @@ const _getAvailableMode = async (
   const preferredMode = configuredMode === 'auto' ? getPreferredAutoMode() : configuredMode;
 
   if (preferredMode === 'vertex' && vertex.online) {
-    return { mode: 'vertex', model: CONFIG.ai.vertex.model, online: true, reason: 'ok', geminiStatus: geminiInfo, ollamaStatus: ollamaInfo, vertexStatus: vertexInfo, envGeminiModel: process.env.GEMINI_MODEL || null };
-  }
-
-  if (vertex.online) {
     return { mode: 'vertex', model: CONFIG.ai.vertex.model, online: true, reason: 'ok', geminiStatus: geminiInfo, ollamaStatus: ollamaInfo, vertexStatus: vertexInfo, envGeminiModel: process.env.GEMINI_MODEL || null };
   }
 
@@ -466,13 +464,13 @@ const sendAiError = (res: Response, error: unknown) => {
 const geminiKeyPresent = (customGeminiKey?: string) =>
   !!(customGeminiKey || process.env.GEMINI_API_KEY || process.env.API_KEY);
 
-/** API-key calls use the strong Gemma model. E2B stays on the offline Ollama path. */
+/* API-key calls use the selected or configured Gemini cloud model, filtering out offline tags. */
 const modelForGeminiKey = (selected?: unknown): string => {
-  if (typeof selected === 'string') {
+  if (typeof selected === 'string' && selected.trim()) {
     const name = selected.trim();
-    if (name.startsWith('gemma-') && !/e2b/i.test(name)) return name;
+    if (!/e2b|inclu-gemma/i.test(name)) return name;
   }
-  return STRONG_GEMMA_MODEL;
+  return process.env.GEMINI_MODEL || CONFIG.ai.gemini.model || GEMINI_MODEL;
 };
 
 const offlineModelAlreadyPresent = (names: string[]) => names.some(name => {

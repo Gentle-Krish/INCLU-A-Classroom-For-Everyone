@@ -1,4 +1,4 @@
-import { CONFIG, CHALK_LOCAL_DOWNLOAD_MODEL, STRONG_GEMMA_MODEL } from '../constants';
+import { CONFIG, CHALK_LOCAL_DOWNLOAD_MODEL, GEMINI_MODEL, STRONG_GEMMA_MODEL } from '../constants';
 import { createLogger } from '../utils/logger';
 import { MAX_NOTES_CHARS, parseQuestPack } from '../utils/questSchema';
 import type { QuestDraft } from '../types';
@@ -63,7 +63,7 @@ ${lesson}`;
 
 async function geminiOnce(prompt: string, key: string): Promise<string> {
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${STRONG_GEMMA_MODEL}:generateContent`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${process.env.GEMINI_MODEL || GEMINI_MODEL}:generateContent`,
     {
       method: 'POST',
       headers: {

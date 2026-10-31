@@ -20,6 +20,8 @@ import { Server } from "socket.io";
 import os from "os";
 import dgram from "node:dgram";
 import { aiRouter } from "./server/aiRouter";
+import { classRouter } from "./server/classRouter";
+import { replicateRoomToCloudAsync, getFirebaseAdmin } from "./server/firebaseService";
 import { answerStudent } from "./server/classAnswer";
 import { CONFIG } from "./constants";
 import { ClientToServerEvents, RoomState, ServerToClientEvents, SocketData, SocketInterServerEvents } from "./types";
@@ -80,6 +82,10 @@ function saveRooms(rooms: Map<string, RoomState>) {
       const tempFile = `${ROOMS_FILE}.tmp`;
       await fs.promises.writeFile(tempFile, data, "utf8");
       await fs.promises.rename(tempFile, ROOMS_FILE);
+      // Non-blocking async replication to Firebase RTDB for active rooms (if configured)
+      for (const [roomId, room] of rooms.entries()) {
+        replicateRoomToCloudAsync(roomId, room);
+      }
     } catch (e) {
       logger.error("Async save rooms failed", e);
     } finally {
@@ -165,6 +171,24 @@ function getWifiSsid(): string {
 
 async function startServer() {
   const app = express();
+
+  // Global CORS and JSON parsing with robust error handling
+  app.use((req, res, next) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(204);
+    }
+    next();
+  });
+  app.use(express.json({ limit: "10mb" }));
+  app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err instanceof SyntaxError && "body" in err) {
+      return res.status(400).json({ error: "Invalid JSON format in request body.", code: "invalid_json" });
+    }
+    next(err);
+  });
   const PORT = Number(process.env.SERVER_PORT || CONFIG.server.defaultPort);
 
   // Electron sets NODE_ENV=production. A phone has no Origin, or a LAN Origin.
@@ -559,9 +583,21 @@ async function startServer() {
   });
 
   // API routes FIRST
-  app.get("/api/health", (_req, res) => {
+  app.get("/api/health", async (_req, res) => {
+    const { isReady, db } = getFirebaseAdmin();
+    let dbStatus = "unavailable";
+    if (isReady && db) {
+      try {
+        await db.ref('.info/connected').once('value');
+        dbStatus = "connected";
+      } catch {
+        dbStatus = "degraded";
+      }
+    }
     res.json({
       status: "ok",
+      server: "running",
+      database: dbStatus,
       env: process.env.NODE_ENV || 'development',
       aiMode: process.env.AI_MODE || 'auto',
       version: process.env.npm_package_version || '1.0.0'
@@ -601,6 +637,7 @@ async function startServer() {
   });
 
   app.use("/api/ai", aiRouter);
+  app.use("/api/classes", classRouter);
 
   app.get('/setup', (_req, res) => {
     const setupPath = process.env.INCLU_SETUP_HTML
@@ -652,6 +689,15 @@ async function startServer() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
+
+  httpServer.on("error", (err: any) => {
+    if (err.code === "EADDRINUSE") {
+      logger.error(`Port ${PORT} is already in use by another process. Please free the port or set SERVER_PORT.`);
+    } else {
+      logger.error("HTTP Server fatal error", err);
+    }
+    process.exit(1);
+  });
 
   httpServer.listen(PORT, CONFIG.server.host, () => {
     const addr = httpServer.address();

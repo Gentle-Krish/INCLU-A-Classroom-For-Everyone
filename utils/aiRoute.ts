@@ -34,15 +34,17 @@ export function boardProviders(options: {
   cloudBlocked?: boolean;
 }): BoardProvider[] {
   const blocked = options.cloudBlocked || geminiBlocked;
-  if (options.preference === 'ollama') return ['ollama'];
-  if (blocked) return options.ollamaReady ? ['ollama'] : ['gemini'];
+  if (blocked && options.ollamaReady) return ['ollama'];
+  if (options.preference === 'ollama') return options.ollamaReady ? ['ollama'] : (options.hasKey ? ['gemini'] : ['ollama']);
   if (options.preference === 'gemini') {
-    return options.ollamaReady ? ['gemini', 'ollama'] : ['gemini'];
+    return options.hasKey ? (options.ollamaReady ? ['gemini', 'ollama'] : ['gemini']) : (options.ollamaReady ? ['ollama'] : ['gemini']);
   }
   if (options.preference === 'vertex') {
     return options.ollamaReady ? ['vertex', 'ollama'] : ['vertex'];
   }
-  return options.ollamaReady ? ['ollama'] : (options.hasKey ? ['gemini'] : ['ollama']);
+  // 'auto': prefer Gemini cloud when an API key is available, fallback to Ollama
+  if (options.hasKey) return options.ollamaReady ? ['gemini', 'ollama'] : ['gemini'];
+  return options.ollamaReady ? ['ollama'] : ['gemini'];
 }
 
 export function localModelName(selected: string | undefined, installed: string[], fallback: string) {

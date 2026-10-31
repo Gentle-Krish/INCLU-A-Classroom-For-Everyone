@@ -1,6 +1,6 @@
 
 import { create } from 'zustand';
-import { CONFIG, CHALK_LOCAL_DOWNLOAD_MODEL, OLLAMA_MODEL, STRONG_GEMMA_MODEL } from './constants';
+import { CONFIG, CHALK_LOCAL_DOWNLOAD_MODEL, GEMINI_MODEL, OLLAMA_MODEL, STRONG_GEMMA_MODEL } from './constants';
 import { AgentState, AgentAction, Point, ChatMessage, DomElementState, CreatorTool, FontFamily, BoardSession, PageState, AiPreference, LessonPlan, MindmapNodeRecord, LessonPhase, LessonStep, TranscribeMode, VoiceConfig, AttachedDocument, ExperimentalConfig, SupportedLanguage, SmartboardLayoutMode, ClassRosterEntry, PublicQuestList, QuestScoreBoard, QuestTally, StudentAsk } from './types';
 import { saveSessionToDb, getSessionFromDb, deleteSessionFromDb, getAllSessionsFromDb } from './services/db';
 import { findMatchingMindmapNode } from './utils/mindmapLayout';
@@ -226,11 +226,11 @@ interface AppStore extends AgentState {
 let autoSaveTimeout: ReturnType<typeof setTimeout>;
 
 const getInitialAiPreference = (): AiPreference => {
-  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return 'ollama';
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return 'gemini';
   const saved = localStorage.getItem('ai_preference');
   return (saved === 'gemini' || saved === 'ollama' || saved === 'vertex' || saved === 'auto') 
     ? (saved as AiPreference) 
-    : 'ollama';
+    : 'gemini';
 };
 
 const getInitialGeminiApiKey = (): string => {
@@ -244,9 +244,9 @@ const getInitialOllamaBaseUrl = (): string => {
 };
 
 const getInitialSelectedGeminiModel = (): string => {
-  if (typeof window === 'undefined') return STRONG_GEMMA_MODEL;
+  if (typeof window === 'undefined') return GEMINI_MODEL;
   const saved = localStorage.getItem('selected_gemini_model');
-  if (!saved || saved.startsWith('gemini-') || /e2b/i.test(saved)) return STRONG_GEMMA_MODEL;
+  if (!saved || /e2b|inclu-gemma/i.test(saved)) return GEMINI_MODEL;
   return saved;
 };
 

@@ -1,19 +1,17 @@
 import { GoogleGenAI, FunctionCallingConfigMode } from "@google/genai";
 import { CanvasObjectData } from "../types";
 import { tools, buildSystemInstruction, validateFunctionCalls, extractThinking, ViewportBounds, getCapability } from "./aiTools";
-import { CONFIG, STRONG_GEMMA_MODEL } from "../constants";
+import { CONFIG, GEMINI_MODEL, STRONG_GEMMA_MODEL } from "../constants";
 import { createLogger } from "../utils/logger";
 
 const getAiClient = (customKey?: string) => new GoogleGenAI({ apiKey: customKey || process.env.GEMINI_API_KEY || process.env.API_KEY || "dummy" });
 const logger = createLogger('gemini-adapter');
 
-/** A saved Gemini key talks to the strong Gemma model, never the E2B offline tag. */
+/* Resolves active Gemini cloud model, ensuring fast low-latency models and filtering out offline tags. */
 const resolveGeminiModel = (modelOverride?: string, customKey?: string) => {
-  const chosen = (modelOverride || process.env.GEMINI_MODEL || CONFIG.ai.gemini.model || 'gemini-3.8-flash').trim();
-  const key = customKey || process.env.GEMINI_API_KEY || process.env.API_KEY;
-  if (!key) return chosen;
-  if (chosen.startsWith('gemma-') && !/e2b/i.test(chosen)) return chosen;
-  return STRONG_GEMMA_MODEL;
+  const chosen = (modelOverride || process.env.GEMINI_MODEL || CONFIG.ai.gemini.model || GEMINI_MODEL).trim();
+  if (/e2b|inclu-gemma/i.test(chosen)) return GEMINI_MODEL;
+  return chosen;
 };
 
 /** Gemma on the Gemini API rejects thinkingConfig. Gemini models still use it. */
@@ -38,12 +36,15 @@ export const generateAgentActionsGemini = async (
   const extractImagePayload = (rawUri?: string | null) => {
     if (!rawUri || typeof rawUri !== 'string') return null;
     const trimmed = rawUri.trim();
-    if (!trimmed) return null;
-    const match = trimmed.match(/^data:([a-zA-Z0-9+.-]+\/[a-zA-Z0-9+.-]+);base64,(.*)$/s);
-    if (match) {
+    if (!trimmed || trimmed === 'data:,' || trimmed.length < 50) return null;
+    const match = trimmed.match(/^data:([a-zA-Z0-9+.-]+\/[a-zA-Z0-9+.-]+);base64,(.+)$/s);
+    if (match && match[2] && match[2].trim().length > 50) {
       return { mimeType: match[1], data: match[2].trim() };
     }
-    return { mimeType: 'image/png', data: trimmed };
+    if (!trimmed.startsWith('data:') && trimmed.length > 50) {
+      return { mimeType: 'image/png', data: trimmed };
+    }
+    return null;
   };
 
   const canvasPayload = extractImagePayload(canvasImageBase64);
@@ -62,18 +63,53 @@ export const generateAgentActionsGemini = async (
 
   systemInstruction += intentInstruction;
 
+  // Build strictly alternating history for Gemini API:
+  // 1. Filter out empty or whitespace-only messages
+  // 2. Remove trailing user turn if it duplicates the current prompt
+  // 3. Drop leading model turns (Gemini conversation must start with a user turn)
+  // 4. Ensure turns strictly alternate (user -> model -> user -> model -> ...)
+  const cleanHistory = (Array.isArray(history) ? history : [])
+    .filter(h => h && typeof h.text === 'string' && h.text.trim().length > 0);
+
+  if (cleanHistory.length > 0 && cleanHistory[cleanHistory.length - 1].role === 'user') {
+    cleanHistory.pop();
+  }
+
+  let startIdx = 0;
+  while (startIdx < cleanHistory.length && cleanHistory[startIdx].role === 'model') {
+    startIdx++;
+  }
+
+  const alternatingHistory: { role: 'user' | 'model'; parts: { text: string }[] }[] = [];
+  for (let i = startIdx; i < cleanHistory.length; i++) {
+    const item = cleanHistory[i];
+    const prev = alternatingHistory[alternatingHistory.length - 1];
+    if (prev && prev.role === item.role) {
+      prev.parts[0].text += '\n' + item.text.trim();
+    } else {
+      alternatingHistory.push({
+        role: item.role,
+        parts: [{ text: item.text.trim() }]
+      });
+    }
+  }
+
+  const currentParts: any[] = [];
+  if (canvasPayload?.data) {
+    currentParts.push({ inlineData: { mimeType: canvasPayload.mimeType, data: canvasPayload.data } });
+  }
+  if (inputImagePayload?.data) {
+    currentParts.push({ inlineData: { mimeType: inputImagePayload.mimeType, data: inputImagePayload.data } });
+  }
+  currentParts.push({
+    text: `User request: ${prompt}\n\nRemember: Thoroughly address the entire request. Use function calls for all visual artifacts, batching actions together, and explain in clear text.`
+  });
+
   const contents = [
-    ...history.map(h => ({
-      role: h.role,
-      parts: [{ text: h.text }]
-    })),
+    ...alternatingHistory,
     {
       role: "user" as const,
-      parts: [
-        ...(canvasPayload?.data ? [{ inlineData: { mimeType: canvasPayload.mimeType, data: canvasPayload.data } }] : []),
-        ...(inputImagePayload?.data ? [{ inlineData: { mimeType: inputImagePayload.mimeType, data: inputImagePayload.data } }] : []),
-        { text: `User request: ${prompt}\n\nRemember: Thoroughly address the entire request. Use function calls for all visual artifacts, batching actions together, and explain in clear text.` }
-      ]
+      parts: currentParts
     }
   ];
 

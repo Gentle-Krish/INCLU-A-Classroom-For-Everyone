@@ -1,3 +1,6 @@
+import { GoogleGenAI } from "@google/genai";
+import { CONFIG, GEMINI_MODEL } from "../../constants";
+
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -13,24 +16,21 @@ export default async function handler(req: any, res: any) {
     }
     body = body || {};
 
-    const { toolId, prompt, selectedVertexModel } = body;
-    const rawModel = selectedVertexModel || process.env.VERTEX_MODEL || 'gemini-3.8-flash';
+    const { toolId, prompt, selectedVertexModel, selectedGeminiModel, geminiApiKey } = body;
+
+    // Resolve API key: prefer client-provided, then env vars
+    const apiKey = (geminiApiKey || process.env.GEMINI_API_KEY || process.env.API_KEY || '').trim();
+    if (!apiKey || apiKey.length < 10) {
+      return res.status(401).json({
+        error: 'A Gemini API key is required.',
+        code: 'invalid_key',
+        retryable: false
+      });
+    }
+
+    const rawModel = selectedGeminiModel || selectedVertexModel || process.env.GEMINI_MODEL || GEMINI_MODEL;
     const modelName = (rawModel === 'gemini-3.7-flash' ? 'gemini-3.8-flash' : rawModel).trim();
-
-    const { GoogleAuth } = await import('google-auth-library');
-    const adcRaw = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
-    const credentials = adcRaw ? JSON.parse(adcRaw.trim()) : undefined;
-
-    const auth = new GoogleAuth({
-      ...(credentials ? { credentials } : {}),
-      scopes: ['https://www.googleapis.com/auth/cloud-platform']
-    });
-
-    const client = await auth.getClient();
-    const token = (await client.getAccessToken()).token;
-
-    const projectId = (process.env.GOOGLE_CLOUD_PROJECT || '').trim();
-    const location = (process.env.GOOGLE_CLOUD_LOCATION || 'global').trim();
+    const model = /e2b|inclu-gemma/i.test(modelName) ? GEMINI_MODEL : modelName;
 
     let promptText = "";
     if (toolId === 'mindmap') {
@@ -66,32 +66,23 @@ RETURN ONLY RAW VALID JSON without markdown formatting.`;
 Format your response in Markdown. Text: "${prompt}"`;
     }
 
-    const host = location === 'global' ? 'aiplatform.googleapis.com' : `${location}-aiplatform.googleapis.com`;
-    const url = `https://${host}/v1/projects/${projectId}/locations/${location}/publishers/google/models/${modelName}:generateContent`;
+    // Use Google GenAI SDK with API key (no GCP project needed)
+    const ai = new GoogleGenAI({ apiKey });
 
-    const vertexRes = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: promptText }] }],
-        generationConfig: {
-          temperature: 0.2,
-          thinkingConfig: {
-            thinkingBudget: 0
-          }
-        }
-      })
+    const thinkingConfig = model.startsWith('gemma-')
+      ? undefined
+      : { thinkingBudget: 0 };
+
+    const response = await ai.models.generateContent({
+      model,
+      contents: [{ role: 'user', parts: [{ text: promptText }] }],
+      config: {
+        temperature: CONFIG.ai.gemini.generation.temperature,
+        ...(thinkingConfig ? { thinkingConfig } : {})
+      }
     });
 
-    const data = await vertexRes.json();
-    if (!vertexRes.ok) {
-      throw new Error(data.error?.message || vertexRes.statusText);
-    }
-
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const text = response.text || "";
     if (toolId === 'summary') return res.status(200).json({ result: text });
 
     const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -104,10 +95,12 @@ Format your response in Markdown. Text: "${prompt}"`;
 
     return res.status(200).json({ result: parsedResult });
   } catch (err: any) {
-    return res.status(500).json({
+    const status = err.status || 500;
+    return res.status(status).json({
       error: 'Could not generate the tool content.',
       code: 'server_error',
-      retryable: true
+      retryable: true,
+      detail: process.env.NODE_ENV === 'production' ? undefined : err.message
     });
   }
 }

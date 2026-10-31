@@ -33,6 +33,7 @@ import { joinedCount as countJoinedStudents } from './utils/classRoom';
 import { toast } from './utils/toast';
 import { ToastContainer } from './components/Toast';
 import { useTranslation } from './utils/translations';
+import { GEMINI_MODEL } from './constants';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ProcessingStatusHud } from './components/ProcessingStatusHud';
 import { LocalModelSetup } from './components/LocalModelSetup';
@@ -192,7 +193,7 @@ const App: React.FC = () => {
     }
 
     if (aiStatus.mode === 'gemini') {
-      const activeModel = storeState.selectedGeminiModel || aiStatus.model || 'gemma-4-31b-it';
+      const activeModel = storeState.selectedGeminiModel || aiStatus.model || GEMINI_MODEL;
       return {
         mode: 'gemini' as const,
         text: t('modeCloud', 'Cloud Mode'),
