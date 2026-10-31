@@ -829,7 +829,7 @@ export const useAgentProcessor = (canvasRef: React.MutableRefObject<any>) => {
 
         case 'MODIFY_PROPERTY': {
            const { objectId, elementText, property, value, newText, newStyle, newParentNodeText } = action.payload;
-           const isScribble = ['scribble', 'scribbles', 'drawing', 'drawings', 'sketch', 'sketches', 'coretan', 'path', 'paths'].includes((elementText || '').toLowerCase().trim());
+           const isScribble = ['scribble', 'scribbles', 'drawing', 'drawings', 'sketch', 'sketches', 'coretan', 'path', 'paths', 'handwriting', 'tulisan', 'text', 'writing'].includes((elementText || '').toLowerCase().trim());
            if (isScribble && (property === 'fill' || property === 'stroke' || property === 'strokeColor' || property === 'color' || property === 'style')) {
              const paths = canvas.getObjects().filter((o: any) => o.type === 'path' || o.id?.startsWith('draw_'));
              if (paths.length > 0) {
@@ -855,14 +855,18 @@ export const useAgentProcessor = (canvasRef: React.MutableRefObject<any>) => {
                  } else if (property === 'text' || property === 'mindmap_node') {
                     target.set('text', resolvedText);
                     canvas.requestRenderAll();
-                 } else if (property === 'fill') {
+                 } else if (property === 'fill' || property === 'color') {
                     if (target.isType('group')) {
                       const shape = target.getObjects().find((o: any) => 
                         o.type === 'rect' || o.type === 'circle' || o.type === 'triangle' || o.type === 'path' || o.type === 'polygon'
                       );
-                      if (shape) shape.set('fill', value);
+                      if (shape) {
+                        shape.set('fill', value);
+                        if (shape.type === 'path') shape.set('stroke', value);
+                      }
                     } else {
                       target.set('fill', value);
+                      if (target.type === 'path') target.set('stroke', value);
                     }
                     canvas.requestRenderAll();
                  } else if (property === 'stroke' || property === 'strokeColor') {

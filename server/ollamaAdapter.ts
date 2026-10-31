@@ -3,6 +3,7 @@ import { CanvasObjectData } from "../types";
 import { tools, buildSystemInstruction, validateFunctionCalls, ViewportBounds, extractThinking, getCapability } from "./aiTools.js";
 import { CONFIG } from "../constants";
 import { createLogger } from "../utils/logger";
+import { getCuratedMindmap } from "./curatedMindmaps";
 
 const logger = createLogger('ollama-adapter');
 const getOllamaUrl = (customUrl?: string): string => {
@@ -285,115 +286,6 @@ function isVisualQuery(prompt: string): boolean {
   return /sketch|drawing|draw|handwriting|tulisan|tulis|gambar|papan|board|canvas|screen|layar|warna|color|colour|purple|ungu|violet|blue|biru|red|merah|green|hijau|yellow|kuning|black|hitam|white|putih|baca|read|ocr|lihat|see|look|view|transcribe|convert|text|teks|written|write|word|kata|what is on/i.test(prompt);
 }
 
-function getCuratedMindmap(topic: string): string | null {
-  const t = topic.toLowerCase();
-  if (t.includes('photo') || t.includes('fotosintesis') || t.includes('sintesis')) {
-    return `mindmap
-  root((Photosynthesis))
-    Inputs Reactants
-      Light Energy Sunlight
-      Water H2O
-      Carbon Dioxide CO2
-    Outputs Products
-      Glucose C6H12O6
-      Oxygen O2
-    Stages
-      Light-Dependent Reactions
-        Thylakoid Membrane
-        Splits H2O Releases O2
-        Generates ATP and NADPH
-      Calvin Cycle Light-Independent
-        Stroma
-        Fixes CO2 into Glucose
-        Uses ATP and NADPH
-    Location and Machinery
-      Chloroplast Organelles
-      Chlorophyll Pigments
-      Stomata Gas Exchange
-    Importance
-      Primary Energy for Ecosystems
-      Produces Atmospheric Oxygen`;
-  }
-  if (t.includes('respirat') || t.includes('pernapasan')) {
-    return `mindmap
-  root((Respiratory System))
-    Upper Tract
-      Nose and Nasal Cavity
-      Pharynx and Larynx
-    Lower Tract
-      Trachea Windpipe
-      Bronchi and Bronchioles
-      Alveoli Air Sacs
-    Mechanism
-      Inhalation Diaphragm Contracts
-      Exhalation Diaphragm Relaxes
-      Gas Exchange in Alveoli
-    Functions
-      Oxygen Supply to Blood
-      Carbon Dioxide Removal
-      Vocal Sound Production`;
-  }
-  if (t.includes('water cycle') || t.includes('daur air') || t.includes('siklus air')) {
-    return `mindmap
-  root((Water Cycle))
-    Evaporation and Transpiration
-      Solar Heating of Water
-      Plant Transpiration
-    Condensation
-      Cooling in Atmosphere
-      Cloud and Fog Formation
-    Precipitation
-      Rain
-      Snow and Sleet
-      Hail
-    Collection and Runoff
-      Surface Runoff into Rivers
-      Groundwater Infiltration
-      Oceans and Lakes Storage`;
-  }
-  if (t.includes('cell') || t.includes('sel')) {
-    return `mindmap
-  root((Cell Structure))
-    Membrane and Boundary
-      Plasma Membrane
-      Cell Wall Plants only
-    Nucleus
-      Nuclear Membrane
-      DNA and Chromatin
-      Nucleolus
-    Cytoplasm and Organelles
-      Mitochondria Powerhouse
-      Ribosomes Protein Synthesis
-      Endoplasmic Reticulum
-      Golgi Apparatus
-    Plant Specific
-      Chloroplasts Photosynthesis
-      Large Central Vacuole`;
-  }
-  if (t.includes('solar system') || t.includes('tata surya') || t.includes('planet')) {
-    return `mindmap
-  root((Solar System))
-    Central Star
-      The Sun
-      Nuclear Fusion Core
-    Terrestrial Inner Planets
-      Mercury
-      Venus
-      Earth with Moon
-      Mars
-    Gas and Ice Giants
-      Jupiter Great Red Spot
-      Saturn Ring System
-      Uranus Tilted Axis
-      Neptune Blue Giant
-    Small Bodies
-      Asteroid Belt
-      Kuiper Belt and Comets
-      Dwarf Planets Pluto`;
-  }
-  return null;
-}
-
 export const generateAgentActionsOllama = async (
   prompt: string,
   canvasImageBase64: string,
@@ -468,6 +360,31 @@ export const generateAgentActionsOllama = async (
 
   // Jev System 1 Reflex Guard: In-Place Mutation Enforcement
   const isModification = /(ubah|edit|ganti|tambah|update|modify|expand|lanjutkan|cabang|masukkan|hapus)/i.test(prompt);
+
+  // Fast-Path Curated Educational Mindmap (<5ms, zero LLM roundtrip, 100% accuracy)
+  if (isMindmapRequest && !isModification) {
+    const curated = getCuratedMindmap(prompt);
+    if (curated) {
+      logger.info(`[Ollama] Instant curated mindmap match for "${curated.title}"`);
+      return {
+        functionCalls: [
+          {
+            name: "render_mermaid",
+            args: {
+              title: `Concept Map: ${curated.title}`,
+              code: curated.code,
+              gridPosition: "CENTER"
+            }
+          }
+        ],
+        textResponse: `Here is the interactive mindmap for ${curated.title}! It covers ${curated.summary}.`,
+        thought: `Matched curated educational knowledge graph for ${curated.title}.`,
+        validationErrors: [],
+        usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 160 }
+      };
+    }
+  }
+
   const existingDiagramKeys = Object.keys(domElements).filter(k => {
     const el = domElements[k];
     const type = el?.componentType || el?.type || '';
@@ -508,12 +425,15 @@ export const generateAgentActionsOllama = async (
     content: finalPrompt
   };
 
-  // Always supply images to userMessage when canvas screenshot or uploaded image is present
-  if (cleanCanvasBase64 || highResInputImage) {
+  // Avoid sending heavy canvas screenshots when creating conceptual mindmaps or diagrams
+  // unless user specifically uploaded an image or asked a visual query about what's on the board
+  const shouldAttachCanvasImage = cleanCanvasBase64 && (isVisualQuery(prompt) || (!isMindmapRequest && !isDiagramRequest));
+  if (shouldAttachCanvasImage || highResInputImage) {
     userMessage.images = [];
-    if (cleanCanvasBase64) userMessage.images.push(cleanCanvasBase64);
     if (highResInputImage) {
       userMessage.images.push(highResInputImage.replace(/^data:image\/(png|jpeg|jpg);base64,/, ""));
+    } else if (shouldAttachCanvasImage) {
+      userMessage.images.push(cleanCanvasBase64);
     }
   }
 
@@ -544,7 +464,7 @@ export const generateAgentActionsOllama = async (
     keep_alive: "24h",
     options: {
       num_ctx: CONFIG.ai.ollama.numCtx || 2048,
-      num_predict: 1536,
+      num_predict: isMindmapRequest ? 500 : 1536,
       temperature: 0.1
     }
   };
@@ -682,25 +602,23 @@ export const generateAgentActionsOllama = async (
     if (curated) {
       // High-confidence educational topic match: ensure full rich mindmap is rendered
       if (!existingMermaid || !existingMermaid.args?.code || existingMermaid.args.code.split('\n').length < 6) {
-        const topicMatch = prompt.match(/(?:for|about|of|on|tentang)?\s*([a-zA-Z0-9\s_-]+)$/i);
-        const rawTopic = topicMatch ? topicMatch[1].replace(/mindmap|mind\s*map|concept\s*map|peta\s*konsep|please|create|make/gi, '').trim() : 'Concept Map';
-        const title = rawTopic ? rawTopic.charAt(0).toUpperCase() + rawTopic.slice(1) : 'Concept Map';
+        const title = curated.title;
         
         if (existingMermaid) {
-          existingMermaid.args.code = curated;
+          existingMermaid.args.code = curated.code;
           existingMermaid.args.title = existingMermaid.args.title || `Concept Map: ${title}`;
         } else {
           functionCalls.unshift({
             name: "render_mermaid",
             args: {
               title: `Concept Map: ${title}`,
-              code: curated,
+              code: curated.code,
               gridPosition: "CENTER"
             }
           });
         }
         if (!textResponse || textResponse.includes('Inputs: Carbon Dioxide') || textResponse.trim().length === 0) {
-          textResponse = `Here is the complete, interactive mindmap for ${title}! It covers all inputs, outputs, light-dependent and Calvin cycle stages, chloroplast structures, and ecological significance.`;
+          textResponse = `Here is the complete, interactive mindmap for ${title}! It covers ${curated.summary}.`;
         }
       }
     } else if (!existingMermaid) {

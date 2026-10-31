@@ -18,6 +18,7 @@ import {
   generateToolContentVertex,
   transcribeAudioVertex
 } from "./vertexAdapter";
+import { getCuratedMindmap } from "./curatedMindmaps";
 import {
   transcribeAudioWhisper,
   isWhisperAvailable
@@ -616,8 +617,29 @@ export const matchFastInteractiveCommand = (prompt?: string): { textResponse: st
   if (!prompt || typeof prompt !== 'string') return null;
   const clean = prompt.trim().toLowerCase();
 
-  // If prompt asks to teach, explain, create diagrams, mindmaps, or combines actions with conjunctions, let the LLM handle it
-  if (/(mindmap|mind\s*map|diagram|explain|teach|summarize|lesson|concept|photosynthesis|history|science|math|formula|\band\b|\bthen\b)/i.test(clean)) {
+  // 0. Fast-Path Curated Educational Mindmaps (<10ms instant response)
+  const isMindmapPrompt = /(?:mind\s*map|mindmap|concept\s*map|peta\s*konsep)/i.test(clean);
+  if (isMindmapPrompt) {
+    const curated = getCuratedMindmap(clean);
+    if (curated) {
+      return {
+        textResponse: `Here is the interactive mindmap for ${curated.title}! It covers ${curated.summary}.`,
+        functionCalls: [
+          {
+            name: "render_mermaid",
+            args: {
+              title: `Concept Map: ${curated.title}`,
+              code: curated.code,
+              gridPosition: "CENTER"
+            }
+          }
+        ]
+      };
+    }
+  }
+
+  // If prompt asks to teach, explain, create diagrams, other mindmaps, or combines actions with conjunctions, let the LLM handle it
+  if (/(mindmap|mind\s*map|diagram|explain|teach|summarize|lesson|concept|history|science|math|formula|\band\b|\bthen\b)/i.test(clean)) {
     return null;
   }
 
