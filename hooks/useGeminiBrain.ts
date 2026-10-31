@@ -144,6 +144,22 @@ export function stripConversationalPrefix(input: string): string {
     .trim();
 }
 
+export function approximateColorName(colorStr?: string): string {
+  if (!colorStr) return 'unknown';
+  const c = colorStr.toLowerCase().trim();
+  if (c.includes('purple') || c.includes('violet') || c.includes('ungu') || c === '#8b5cf6' || c === '#a855f7' || c === '#7c3aed' || c === '#9333ea') return 'purple';
+  if (c.includes('blue') || c.includes('biru') || c === '#3b82f6' || c === '#2563eb' || c === '#1d4ed8' || c === '#60a5fa' || c === '#0ea5e9') return 'blue';
+  if (c.includes('red') || c.includes('merah') || c === '#ef4444' || c === '#dc2626' || c === '#b91c1c' || c === '#f87171') return 'red';
+  if (c.includes('green') || c.includes('hijau') || c === '#22c55e' || c === '#16a34a' || c === '#15803d' || c === '#4ade80' || c === '#10b981') return 'green';
+  if (c.includes('yellow') || c.includes('kuning') || c === '#eab308' || c === '#ca8a04' || c === '#facc15') return 'yellow';
+  if (c.includes('orange') || c.includes('oranye') || c === '#f97316' || c === '#ea580c') return 'orange';
+  if (c.includes('pink') || c.includes('merah muda') || c === '#ec4899' || c === '#db2777') return 'pink';
+  if (c.includes('black') || c.includes('hitam') || c === '#000000' || c === '#18181b' || c === '#0f172a' || c === '#27272a' || c === '#3f2a1d' || c === '#1c1917') return 'black';
+  if (c.includes('white') || c.includes('putih') || c === '#ffffff' || c === '#fbf6f0') return 'white';
+  if (c.includes('gray') || c.includes('grey') || c.includes('abu') || c === '#6b7280' || c === '#9ca3af') return 'gray';
+  return c;
+}
+
 export function evaluateJevSystemOne(
   prompt: string,
   storeState: any,
@@ -796,6 +812,10 @@ export const useGeminiBrain = () => {
       return;
     }
 
+    // Immediately clear chat input so input field is ready for the next prompt
+    useStore.getState().setChatInputText('');
+    useStore.getState().setInterimInputText('');
+
     isProcessingGlobal = true;
     isProcessingRef.current = true;
 
@@ -949,12 +969,19 @@ export const useGeminiBrain = () => {
           const inView = obj.left > tl.x - 500 && obj.left < br.x + 500 && obj.top > tl.y - 500 && obj.top < br.y + 500;
           if (!inView && rawObjects.length > 20) return null;
 
+          const stroke = typeof obj.stroke === 'string' ? obj.stroke : undefined;
+          const fill = typeof obj.fill === 'string' ? obj.fill : undefined;
+          const activeColor = stroke || fill;
+          const colorName = approximateColorName(activeColor);
+
           const baseData: CanvasObjectData = {
             id: obj.id || `obj_${Math.random().toString(36).substr(2, 9)}`,
             type: obj.type,
             left: Math.round(obj.left || 0),
             top: Math.round(obj.top || 0),
-            fill: typeof obj.fill === 'string' ? obj.fill : 'mixed',
+            fill: fill || 'mixed',
+            strokeColor: stroke,
+            colorName: colorName,
             angle: Math.round(obj.angle || 0),
             width: Math.round(obj.width * (obj.scaleX || 1)),
             height: Math.round(obj.height * (obj.scaleY || 1)),
@@ -965,14 +992,14 @@ export const useGeminiBrain = () => {
           } else if (obj.svgSource) {
             baseData.svgContent = obj.svgSource;
           } else if (obj.type === 'i-text' || obj.type === 'text' || obj.type === 'textbox') {
-            baseData.textContent = obj.text;
+            baseData.textContent = `${obj.text} (color: ${colorName})`;
           } else if (obj.type === 'path' || obj.id?.startsWith('draw_')) {
-            baseData.textContent = 'scribble';
-            baseData.strokeColor = typeof obj.stroke === 'string' ? obj.stroke : (typeof obj.fill === 'string' ? obj.fill : undefined);
+            baseData.textContent = `handwritten drawing/text in ${colorName} ink (${activeColor || 'pen'})`;
+            baseData.strokeColor = stroke || fill;
           } else if (obj.type === 'group' && typeof obj.getObjects === 'function') {
             for (const inner of obj.getObjects()) {
               if ((inner.type === 'i-text' || inner.type === 'text' || inner.type === 'textbox') && inner.text) {
-                baseData.textContent = inner.text;
+                baseData.textContent = `${inner.text} (color: ${colorName})`;
                 break;
               }
             }
@@ -1673,7 +1700,13 @@ ${jevDirective}
       });
 
       // Stage 4: Enqueue in correct order — shapes first, then connections, then everything else
-      [...shapeActions, ...pathActions, ...otherActions].forEach(a => addAction(a));
+      const allActions = [...shapeActions, ...pathActions, ...otherActions];
+      allActions.forEach(a => addAction(a));
+
+      // Conversational responses without canvas actions: open the AI chat drawer so the reply stays visible
+      if (allActions.length === 0 && !useStore.getState().isAiDrawerOpen && !useStore.getState().isAiModalOpen) {
+        useStore.getState().toggleAiDrawer();
+      }
 
     } catch (error: any) {
       if (error?.name === 'AbortError' || error?.message?.includes('dibatalkan') || error?.message?.includes('cancelled by the user') || !useStore.getState().isThinking) {

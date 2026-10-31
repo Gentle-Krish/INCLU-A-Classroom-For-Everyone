@@ -105,6 +105,18 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapability> = {
     supportsLessonEngine: true,
     recommendedTemperature: 0.3
   },
+  'inclu-gemma:2b': {
+    supportsComplexSchema: false,
+    maxToolCallsPerRequest: 12,
+    supportsLessonEngine: false,
+    recommendedTemperature: 0.1
+  },
+  'gemma4:e2b': {
+    supportsComplexSchema: false,
+    maxToolCallsPerRequest: 12,
+    supportsLessonEngine: false,
+    recommendedTemperature: 0.1
+  },
   'ollama-local': {
     supportsComplexSchema: true,
     maxToolCallsPerRequest: 20,
@@ -116,6 +128,9 @@ export const MODEL_CAPABILITIES: Record<string, ModelCapability> = {
 export const getCapability = (modelName: string): ModelCapability => {
   if (MODEL_CAPABILITIES[modelName]) {
     return MODEL_CAPABILITIES[modelName];
+  }
+  if (/inclu-gemma|gemma4:e2b|2b/i.test(modelName)) {
+    return MODEL_CAPABILITIES['inclu-gemma:2b'];
   }
   if (modelName.startsWith('gemini-')) {
     return MODEL_CAPABILITIES['gemini-3.8-flash'] || MODEL_CAPABILITIES['gemini-3.7-flash'];
@@ -478,7 +493,7 @@ STEM_SIMULATION or INTERACTIVE_APP: {"title":"string","html":"HTML string with c
   },
   {
     name: "create_shape",
-    description: "Draw a geometric shape with customizable dimensions, fill color, stroke border, and label text. Supports all 11 shapes.",
+    description: "Draw a single standalone geometric shape (e.g. rectangle, circle, star). NOT for mindmaps, concept trees, or diagrams (use render_mermaid for mindmaps and diagrams).",
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -647,7 +662,11 @@ export const buildSystemInstruction = (
   // Existing canvas objects
   const existingObjects = canvasObjects.length > 0
     ? canvasObjects
-        .map(o => `  - [${o.id}] ${o.type}${o.textContent ? ` "${o.textContent}"` : ''} at (${o.left}, ${o.top})`)
+        .map(o => {
+          const colorDesc = o.colorName ? ` [color: ${o.colorName}${o.strokeColor ? ` (${o.strokeColor})` : ''}]` : (o.strokeColor || o.fill ? ` [color: ${o.strokeColor || o.fill}]` : '');
+          const textDesc = o.textContent ? ` "${o.textContent}"` : '';
+          return `  - [${o.id}] ${o.type}${colorDesc}${textDesc} at (${o.left}, ${o.top})`;
+        })
         .join('\n')
     : '  (empty)';
 
@@ -709,6 +728,7 @@ ${existingObjects}
 
 RULES:
 - Respond in the user's language
+- VISUAL & SCREEN QUERIES: You have direct visibility of all canvas objects and their colors/text above, as well as the attached canvas image. When asked what text, handwriting, drawing, or color is on the screen, answer directly and helpfully in your text response. NEVER say you lack a function to inspect the screen.
 - For mind maps and concept maps: use render_mermaid with syntax: mindmap. First node = root((Topic))
 - If a diagram already exists on canvas: use update_component to modify or expand it in-place
 - For interactive apps: use add_component (TIMER, ATTENDANCE, TODOLIST)
@@ -728,6 +748,12 @@ Execute the request now.`;
 2. **MULTILINGUAL & GLOBAL INCLUSIVITY**:
    - Speak and respond fluently in English or whatever language the teacher asks in (English, Spanish, French, Arabic, Chinese, Russian, Indonesian, etc.).
    - Generate all diagram text, mindmap labels, quiz questions, and markdown notes in the language requested by the teacher.
+
+3. **VISUAL AWARENESS & SCREEN INSPECTION**:
+   - You have DIRECT VISUAL ACCESS to the current whiteboard screen through the attached image and the Existing shapes/text list above with their exact colors and handwriting text.
+   - When the user asks what is on the board, what text or drawing is present, or what color any text/drawing/widget is:
+     Answer the question directly, factually, and helpfully in your text response.
+   - NEVER claim that you lack a function or tool to inspect the screen or check visual properties/colors. You already have all visual properties and screenshot right in your context.
 
 ## CANVAS STATE
 Viewport: ${vw}×${vh}px
@@ -820,7 +846,9 @@ You have full capability to mutate and update ANY object on the whiteboard witho
    - **Editing Markmap / Mermaid**: Update or append branches/flowchart nodes using update_component.
    - **Editing Documents & Notes**: Append additional sections, math formulas, or summaries using action: 'APPEND'.
 
-2. **Editing Shapes & Objects (modify_object)**:
+2. **Editing Shapes, Scribbles & Objects (modify_object)**:
+   - Recolor scribble/drawing: target elementText "scribble" or "drawing", action "CHANGE_COLOR" or "CHANGE_STROKE", value hex color (e.g. "#3B82F6")
+   - Erase/delete scribble/drawing: target elementText "scribble" or "drawing", action "DELETE"
    - Recolor fill: action "CHANGE_COLOR", value "#10B981"
    - Restyle stroke/border: action "CHANGE_STROKE", value "#3B82F6"
    - Edit text label: action "UPDATE_TEXT", value "New Text"

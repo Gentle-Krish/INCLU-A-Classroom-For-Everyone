@@ -25,7 +25,14 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ mode, canvasRef, onClo
     attachedDocument, lastUploadedImage, isVoiceListening, interimInputText } = useStore();
   const { processUserPrompt } = useGeminiBrain();
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const followMessages = useRef(true);
+
+  useEffect(() => {
+    if (!chatInputText && textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+  }, [chatInputText]);
   useEffect(() => {
     const end = chatEndRef.current;
     const body = end?.parentElement;
@@ -234,6 +241,8 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ mode, canvasRef, onClo
                         const text = chatInputText.trim() || defaultText;
                         followMessages.current = true;
                         setChatInputText('');
+                        useStore.getState().setInterimInputText('');
+                        if (textareaRef.current) textareaRef.current.style.height = 'auto';
                         useStore.getState().addMessage({ role: 'user', text });
                         await processUserPrompt(text, canvasRef);
                       }}
@@ -263,6 +272,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ mode, canvasRef, onClo
                           </button>
                         </div>
                         <textarea
+                          ref={textareaRef}
                           aria-label="Message AI assistant"
                           value={chatInputText}
                           onChange={(e) => {

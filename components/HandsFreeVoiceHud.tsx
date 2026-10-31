@@ -40,18 +40,15 @@ export const HandsFreeVoiceHud: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggleAmbient, isVoiceCommandActive, cancelCommand, finalizeAndExecuteCommand]);
 
-  // If user previously enabled hands-free mode in localStorage, auto-start ambient listening on mount if permitted
+  // Auto-start ambient listening on mount if microphone permission is already granted
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const shouldAutoStart = localStorage.getItem('chalk_hands_free_listening') === 'true';
-    if (shouldAutoStart && !isHandsFreeListening) {
-      if (navigator.permissions && navigator.permissions.query) {
-        navigator.permissions.query({ name: 'microphone' as any }).then((perm) => {
-          if (perm.state === 'granted') {
-            startAmbient();
-          }
-        }).catch(() => {});
-      }
+    if (navigator.permissions && navigator.permissions.query) {
+      navigator.permissions.query({ name: 'microphone' as any }).then((perm) => {
+        if (perm.state === 'granted') {
+          startAmbient();
+        }
+      }).catch(() => {});
     }
   }, []);
 
@@ -150,26 +147,6 @@ export const HandsFreeVoiceHud: React.FC = () => {
                 </button>
               </div>
             </div>
-          </motion.div>
-        )}
-
-        {/* 2. PASSIVE WAKE-WORD PILL (When Hands-Free is listening in background waiting for "Hey INCLU") */}
-        {isHandsFreeListening && !isVoiceCommandActive && (
-          <motion.div
-            key="passive-wake-pill"
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="pointer-events-auto bg-[#3F2A1D]/90 hover:bg-[#3F2A1D] text-[#FFF6EE] border border-[#FFE08A]/40 shadow-lg backdrop-blur-md rounded-full px-4 py-1.5 flex items-center gap-2 text-xs font-semibold cursor-pointer transition"
-            onClick={toggleAmbient}
-            title="Hands-free listening is on. Say 'Hey INCLU' or 'Please record these commands' (Click or Alt+V to disable)"
-          >
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FFE08A] opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#FFE08A]"></span>
-            </span>
-            <span>Say <strong className="text-[#FFE08A]">"Hey INCLU"</strong> or <strong className="text-[#FFE08A]">"Please record these commands"</strong></span>
-            <span className="text-[10px] text-[#A08B7A] bg-[#2A1C13] px-2 py-0.5 rounded-full border border-[#6B4423]/40">Alt+V</span>
           </motion.div>
         )}
       </AnimatePresence>

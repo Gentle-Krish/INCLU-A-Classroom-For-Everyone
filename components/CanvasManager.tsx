@@ -145,7 +145,7 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
         canvas.__loadingPage = false;
       } else {
         canvas.loadFromJSON(newPageData.canvas, () => {
-          canvas.renderAll();
+          canvas.requestRenderAll();
           canvas.__loadingPage = false;
         });
       }
@@ -837,10 +837,20 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
     };
 
     let savePreviewTimeout: any;
+    let saveHistoryTimeout: any = null;
+
+    const saveHistoryDebounced = () => {
+      if (isHistoryUpdating || canvas.__loadingPage) return;
+      clearTimeout(saveHistoryTimeout);
+      saveHistoryTimeout = setTimeout(() => {
+        saveHistory();
+      }, 120);
+    };
 
     const saveHistory = () => {
       if (isHistoryUpdating || canvas.__loadingPage) return;
-      const json = JSON.stringify(canvas.toJSON(['id', 'zIndex', 'isDomPlaceholder']));
+      const rawJson = canvas.toJSON(['id', 'zIndex', 'isDomPlaceholder']);
+      const json = JSON.stringify(rawJson);
       if (history.length === 0 || history[history.length - 1] !== json) {
         history.push(json);
         if (history.length > 50) history.shift();
@@ -849,7 +859,7 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
       // Also update the store page data on every action
       useStore.getState().updatePageData(
         useStore.getState().currentPageIndex, 
-        canvas.toJSON(['id', 'zIndex', 'isDomPlaceholder']), 
+        rawJson, 
         useStore.getState().domElements
       );
       
@@ -860,14 +870,14 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
           const previewUrl = canvas.toDataURL({ format: 'png', multiplier: 0.2 });
           useStore.getState().updatePageData(
             useStore.getState().currentPageIndex,
-            canvas.toJSON(['id', 'zIndex', 'isDomPlaceholder']),
+            rawJson,
             useStore.getState().domElements,
             previewUrl
           );
         } catch (e) {
           // Ignore
         }
-      }, 1000);
+      }, 1500);
     };
 
     canvas.on('object:added', (e: any) => {
@@ -887,10 +897,10 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
         obj.on('editing:exited', cleanIfEmpty);
         obj.on('deselected', cleanIfEmpty);
       }
-      saveHistory();
+      saveHistoryDebounced();
     });
-    canvas.on('object:modified', () => saveHistory());
-    canvas.on('object:removed', () => saveHistory());
+    canvas.on('object:modified', () => saveHistoryDebounced());
+    canvas.on('object:removed', () => saveHistoryDebounced());
     
     // Initial state save
     setTimeout(saveHistory, 100);
@@ -901,7 +911,7 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
         redoStack.push(history.pop()!); // Current state goes to redo
         const prevState = history[history.length - 1]; // We don't pop the prev state, it remains active
         canvas.loadFromJSON(prevState, () => {
-          canvas.renderAll();
+          canvas.requestRenderAll();
           isHistoryUpdating = false;
         });
       }
@@ -913,7 +923,7 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
         const nextState = redoStack.pop()!;
         history.push(nextState);
         canvas.loadFromJSON(nextState, () => {
-          canvas.renderAll();
+          canvas.requestRenderAll();
           isHistoryUpdating = false;
         });
       }

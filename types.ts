@@ -85,6 +85,8 @@ export interface CanvasObjectData {
   height?: number;
   radius?: number;
   fill: string;
+  strokeColor?: string;
+  colorName?: string;
   angle?: number;
   // Metadata for AI context
   htmlContent?: string; 

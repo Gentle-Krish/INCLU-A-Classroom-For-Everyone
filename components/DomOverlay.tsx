@@ -383,7 +383,7 @@ export const DomOverlay: React.FC = () => {
       <div
         className="absolute inset-0 will-change-transform"
         style={{
-          transform: `matrix(${viewportTransform.join(',')})`,
+          transform: `matrix(${viewportTransform.join(',')}) translateZ(0)`,
           transformOrigin: '0 0'
         }}
       >
@@ -429,6 +429,7 @@ export const DomOverlay: React.FC = () => {
                 transform: `translate3d(-50%, -50%, 0) rotate(${el.rotation || 0}deg)`,
                 transformOrigin: 'center center',
                 backfaceVisibility: 'hidden',
+                contain: 'layout style',
                 pointerEvents: isHandMode ? 'none' : 'auto',
                 transition: isDragging || isResizing ? 'none' : 'box-shadow 0.22s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.22s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease'
               }}

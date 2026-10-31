@@ -10,6 +10,16 @@
 
 export function cleanMermaidNodeLabel(raw: string, fallback = 'Topik'): string {
   let s = String(raw || '')
+    // Clean raw LaTeX math expressions: e.g. $\text{CO}_2$, \text{H}_2\text{O}, \text{C}_6\text{H}_{12}\text{O}_6
+    .replace(/\\text\{([^}]*)\}/g, '$1')
+    .replace(/\\mathrm\{([^}]*)\}/g, '$1')
+    .replace(/\\mathbf\{([^}]*)\}/g, '$1')
+    .replace(/\$([^$]*)\$/g, '$1')
+    .replace(/_\{([^}]*)\}/g, '$1')
+    .replace(/_([0-9a-zA-Z])/g, '$1')
+    .replace(/\^\{([^}]*)\}/g, '$1')
+    .replace(/\^([0-9a-zA-Z])/g, '$1')
+    .replace(/\\/g, '')
     // Replace parenthesized expressions "Foo (Bar)" -> "Foo - Bar"
     .replace(/\s*\(([^()]*)\)/g, ' - $1')
     .replace(/\s*\[([^\[\]]*)\]/g, ' - $1')

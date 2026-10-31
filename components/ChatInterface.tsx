@@ -22,6 +22,8 @@ import { useTranslation } from '../utils/translations';
 import { toast } from '../utils/toast';
 import { useAiStatus } from '../hooks/useAiStatus';
 import { deleteCurrentSelection } from '../utils/boardDeletion';
+import { detectDoneTermination } from '../hooks/useAmbientListener';
+import { stripConversationalPrefix } from '../hooks/useGeminiBrain';
 
 const SPEECH_TYPE_MESSAGE = 'Speech could not be heard. Type the question.';
 let lastSpeechFailureToastAt = 0;
@@ -322,14 +324,55 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ canvasRef }) => {
             if (trimmed) {
               const currentBase = transcriptBufferRef.current;
               const updated = currentBase ? currentBase + ' ' + trimmed : trimmed;
-              transcriptBufferRef.current = updated;
-              setInput(updated);
-              useStore.getState().setChatInputText(updated);
+              const doneCheck = detectDoneTermination(updated);
+
+              if (doneCheck.hasDone) {
+                const cleanCmd = stripConversationalPrefix(doneCheck.commandWithoutDone);
+                try { recognitionRef.current?.stop(); } catch {}
+                setIsListening(false);
+                sounds.play('success');
+                stopVisualizer();
+                toast.success('🎙️ Spoken "Done" detected! Executing...');
+                transcriptBufferRef.current = '';
+                interimBufferRef.current = '';
+                setInterimInput('');
+                useStore.getState().setInterimInputText('');
+                if (cleanCmd.length > 1) {
+                  setInput(cleanCmd);
+                  useStore.getState().setChatInputText(cleanCmd);
+                  handleSubmitInternal(cleanCmd);
+                }
+                return;
+              }
+
+              const cleanPrefix = stripConversationalPrefix(updated);
+              const display = cleanPrefix || updated;
+              transcriptBufferRef.current = display;
+              setInput(display);
+              useStore.getState().setChatInputText(display);
               interimBufferRef.current = '';
               setInterimInput('');
               useStore.getState().setInterimInputText('');
             }
           } else {
+            const liveText = (transcriptBufferRef.current ? transcriptBufferRef.current + ' ' : '') + interimTranscript.trim();
+            const liveDone = detectDoneTermination(liveText);
+            if (liveDone.hasDone && liveDone.commandWithoutDone.trim().length > 2) {
+              const cleanCmd = stripConversationalPrefix(liveDone.commandWithoutDone);
+              try { recognitionRef.current?.stop(); } catch {}
+              setIsListening(false);
+              sounds.play('success');
+              stopVisualizer();
+              toast.success('🎙️ Spoken "Done" detected! Executing...');
+              transcriptBufferRef.current = '';
+              interimBufferRef.current = '';
+              setInterimInput('');
+              useStore.getState().setInterimInputText('');
+              setInput(cleanCmd);
+              useStore.getState().setChatInputText(cleanCmd);
+              handleSubmitInternal(cleanCmd);
+              return;
+            }
             interimBufferRef.current = interimTranscript;
             setInterimInput(interimTranscript);
             useStore.getState().setInterimInputText(interimTranscript);
@@ -453,16 +496,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ canvasRef }) => {
           setIsTranscribing(false);
         }
       } else {
-        const finalLocalTranscript = transcriptBufferRef.current.trim() || interimBufferRef.current.trim();
+        const raw = transcriptBufferRef.current.trim() || interimBufferRef.current.trim();
+        const doneCheck = detectDoneTermination(raw);
+        const candidate = doneCheck.hasDone ? doneCheck.commandWithoutDone : raw;
+        const finalLocalTranscript = stripConversationalPrefix(candidate);
         if (finalLocalTranscript) {
-          if (voiceConfig.autoSubmit) {
-            handleSubmitInternal(finalLocalTranscript);
-          } else {
-            setInput(finalLocalTranscript);
-            useStore.getState().setChatInputText(finalLocalTranscript);
-            if (!useStore.getState().isAiDrawerOpen && !useStore.getState().isAiModalOpen) useStore.getState().toggleAiDrawer();
-            toast.info('The voice result was placed in the input field.');
-          }
+          setInput(finalLocalTranscript);
+          useStore.getState().setChatInputText(finalLocalTranscript);
+          handleSubmitInternal(finalLocalTranscript);
+          sounds.play('success');
         }
         transcriptBufferRef.current = '';
         interimBufferRef.current = '';
@@ -511,15 +553,92 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ canvasRef }) => {
                 if (result.isFinal) finalTranscript += result[0].transcript;
                 else interimTranscript += result[0].transcript;
               }
+
+              // 1. Spoken Cancellation check
+              if (/\b(?:cancel|stop recording|nevermind|batal)\b/i.test(finalTranscript) || /\b(?:cancel|stop recording|nevermind|batal)\b/i.test(interimTranscript)) {
+                try { rec.stop(); } catch {}
+                if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                  try { mediaRecorderRef.current.stop(); } catch {}
+                }
+                setIsListening(false);
+                sounds.play('mic_off');
+                stopVisualizer();
+                toast.info('Voice recording cancelled');
+                transcriptBufferRef.current = '';
+                interimBufferRef.current = '';
+                setInterimInput('');
+                useStore.getState().setInterimInputText('');
+                return;
+              }
+
+              // 2. Final transcript processing & "Done" trigger
               if (finalTranscript.trim()) {
                 const updated = (transcriptBufferRef.current ? transcriptBufferRef.current + ' ' : '') + finalTranscript.trim();
-                transcriptBufferRef.current = updated;
-                setInput(updated);
-                useStore.getState().setChatInputText(updated);
+                const doneCheck = detectDoneTermination(updated);
+
+                if (doneCheck.hasDone) {
+                  // User said "Done"!
+                  const rawCommand = doneCheck.commandWithoutDone;
+                  const cleanCommand = stripConversationalPrefix(rawCommand);
+
+                  try { rec.stop(); } catch {}
+                  if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                    try { mediaRecorderRef.current.stop(); } catch {}
+                  }
+                  setIsListening(false);
+                  sounds.play('success');
+                  stopVisualizer();
+                  toast.success('🎙️ Spoken "Done" registered! Executing...');
+
+                  transcriptBufferRef.current = '';
+                  interimBufferRef.current = '';
+                  setInterimInput('');
+                  useStore.getState().setInterimInputText('');
+
+                  if (cleanCommand.length > 1) {
+                    setInput(cleanCommand);
+                    useStore.getState().setChatInputText(cleanCommand);
+                    handleSubmitInternal(cleanCommand);
+                  }
+                  return;
+                }
+
+                // If not "Done", continue accumulating
+                const cleanPrefix = stripConversationalPrefix(updated);
+                const display = cleanPrefix || updated;
+                transcriptBufferRef.current = display;
+                setInput(display);
+                useStore.getState().setChatInputText(display);
                 interimBufferRef.current = '';
                 setInterimInput('');
                 useStore.getState().setInterimInputText('');
               } else if (interimTranscript) {
+                // Check if interim transcript ends with "Done"
+                const liveText = (transcriptBufferRef.current ? transcriptBufferRef.current + ' ' : '') + interimTranscript.trim();
+                const liveDone = detectDoneTermination(liveText);
+
+                if (liveDone.hasDone && liveDone.commandWithoutDone.trim().length > 2) {
+                  const cleanCommand = stripConversationalPrefix(liveDone.commandWithoutDone);
+                  try { rec.stop(); } catch {}
+                  if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                    try { mediaRecorderRef.current.stop(); } catch {}
+                  }
+                  setIsListening(false);
+                  sounds.play('success');
+                  stopVisualizer();
+                  toast.success('🎙️ Spoken "Done" registered! Executing...');
+
+                  transcriptBufferRef.current = '';
+                  interimBufferRef.current = '';
+                  setInterimInput('');
+                  useStore.getState().setInterimInputText('');
+
+                  setInput(cleanCommand);
+                  useStore.getState().setChatInputText(cleanCommand);
+                  handleSubmitInternal(cleanCommand);
+                  return;
+                }
+
                 interimBufferRef.current = interimTranscript;
                 setInterimInput(interimTranscript);
                 useStore.getState().setInterimInputText(interimTranscript);
@@ -767,6 +886,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ canvasRef }) => {
     const finalTxt = text.trim() || defaultPrompt;
     if (!finalTxt || isThinking) return;
     setInput('');
+    useStore.getState().setChatInputText('');
+    useStore.getState().setInterimInputText('');
     useStore.getState().addMessage({ role: 'user', text: finalTxt });
     await processUserPrompt(finalTxt, canvasRef);
   };

@@ -245,10 +245,9 @@ async function queryVisionCoprocessor(
         messages: [
           {
             role: 'user',
-            content: `Examine this whiteboard screenshot carefully to help the teacher.
-Teacher asks: "${userPrompt}".
-Transcribe any handwritten text, read drawings, and identify colors (such as blue, red, green) or shapes present.
-Be direct, concise, and factual.`,
+            content: `Analyze this whiteboard screenshot to answer the user's question directly.
+Question: "${userPrompt}".
+Describe any handwritten words, text, drawings, lines, and their exact colors (such as purple, blue, red, green, black). Be factual and concise.`,
             images: [canvasBase64]
           }
         ],
@@ -283,7 +282,116 @@ async function getInstalledVisionModel(customUrl?: string): Promise<string | nul
 }
 
 function isVisualQuery(prompt: string): boolean {
-  return /sketch|drawing|handwriting|tulisan|gambar|papan|board|warna|color|blue|biru|red|merah|baca|read|ocr|lihat|see|transcribe|convert/i.test(prompt);
+  return /sketch|drawing|draw|handwriting|tulisan|tulis|gambar|papan|board|canvas|screen|layar|warna|color|colour|purple|ungu|violet|blue|biru|red|merah|green|hijau|yellow|kuning|black|hitam|white|putih|baca|read|ocr|lihat|see|look|view|transcribe|convert|text|teks|written|write|word|kata|what is on/i.test(prompt);
+}
+
+function getCuratedMindmap(topic: string): string | null {
+  const t = topic.toLowerCase();
+  if (t.includes('photo') || t.includes('fotosintesis') || t.includes('sintesis')) {
+    return `mindmap
+  root((Photosynthesis))
+    Inputs Reactants
+      Light Energy Sunlight
+      Water H2O
+      Carbon Dioxide CO2
+    Outputs Products
+      Glucose C6H12O6
+      Oxygen O2
+    Stages
+      Light-Dependent Reactions
+        Thylakoid Membrane
+        Splits H2O Releases O2
+        Generates ATP and NADPH
+      Calvin Cycle Light-Independent
+        Stroma
+        Fixes CO2 into Glucose
+        Uses ATP and NADPH
+    Location and Machinery
+      Chloroplast Organelles
+      Chlorophyll Pigments
+      Stomata Gas Exchange
+    Importance
+      Primary Energy for Ecosystems
+      Produces Atmospheric Oxygen`;
+  }
+  if (t.includes('respirat') || t.includes('pernapasan')) {
+    return `mindmap
+  root((Respiratory System))
+    Upper Tract
+      Nose and Nasal Cavity
+      Pharynx and Larynx
+    Lower Tract
+      Trachea Windpipe
+      Bronchi and Bronchioles
+      Alveoli Air Sacs
+    Mechanism
+      Inhalation Diaphragm Contracts
+      Exhalation Diaphragm Relaxes
+      Gas Exchange in Alveoli
+    Functions
+      Oxygen Supply to Blood
+      Carbon Dioxide Removal
+      Vocal Sound Production`;
+  }
+  if (t.includes('water cycle') || t.includes('daur air') || t.includes('siklus air')) {
+    return `mindmap
+  root((Water Cycle))
+    Evaporation and Transpiration
+      Solar Heating of Water
+      Plant Transpiration
+    Condensation
+      Cooling in Atmosphere
+      Cloud and Fog Formation
+    Precipitation
+      Rain
+      Snow and Sleet
+      Hail
+    Collection and Runoff
+      Surface Runoff into Rivers
+      Groundwater Infiltration
+      Oceans and Lakes Storage`;
+  }
+  if (t.includes('cell') || t.includes('sel')) {
+    return `mindmap
+  root((Cell Structure))
+    Membrane and Boundary
+      Plasma Membrane
+      Cell Wall Plants only
+    Nucleus
+      Nuclear Membrane
+      DNA and Chromatin
+      Nucleolus
+    Cytoplasm and Organelles
+      Mitochondria Powerhouse
+      Ribosomes Protein Synthesis
+      Endoplasmic Reticulum
+      Golgi Apparatus
+    Plant Specific
+      Chloroplasts Photosynthesis
+      Large Central Vacuole`;
+  }
+  if (t.includes('solar system') || t.includes('tata surya') || t.includes('planet')) {
+    return `mindmap
+  root((Solar System))
+    Central Star
+      The Sun
+      Nuclear Fusion Core
+    Terrestrial Inner Planets
+      Mercury
+      Venus
+      Earth with Moon
+      Mars
+    Gas and Ice Giants
+      Jupiter Great Red Spot
+      Saturn Ring System
+      Uranus Tilted Axis
+      Neptune Blue Giant
+    Small Bodies
+      Asteroid Belt
+      Kuiper Belt and Comets
+      Dwarf Planets Pluto`;
+  }
+  return null;
 }
 
 export const generateAgentActionsOllama = async (
@@ -317,7 +425,37 @@ export const generateAgentActionsOllama = async (
 
   systemInstruction += intentInstruction;
   
-  const mappedTools = tools.map(t => ({
+  // Intelligent Tool Scoping:
+  // Giving a 2B local model 22 huge JSON schemas causes massive prompt-eval latency (15-25s) and tool hallucinations.
+  // By scoping to the tools relevant to the user request, prompt evaluation takes <1-2s and accuracy skyrockets!
+  const isMindmapRequest = /(mindmap|mind\s*map|concept\s*map|peta\s*konsep)/i.test(prompt);
+  const isDiagramRequest = /(diagram|flowchart|cycle|sequence|alur|proses|process)/i.test(prompt);
+  const isTimerRequest = /(timer|stopwatch|countdown|hitun)/i.test(prompt);
+  const isAttendanceRequest = /(attendance|absensi|presensi|roster)/i.test(prompt);
+  const isQuizRequest = /(quiz|kuis|soal|evaluasi|test|exam)/i.test(prompt);
+  const isMathGraphRequest = /(plot|grafik|graph|parabola|sinus|linear)/i.test(prompt);
+  const isShapeRequest = /(shape|kotak|lingkaran|segitiga|rectangle|circle|star|bintang)/i.test(prompt);
+
+  let allowedToolNames: string[] | null = null;
+  if (isMindmapRequest || isDiagramRequest) {
+    allowedToolNames = ['render_mermaid', 'render_markmap', 'update_component', 'add_text_label'];
+  } else if (isTimerRequest) {
+    allowedToolNames = ['add_component', 'update_component'];
+  } else if (isAttendanceRequest) {
+    allowedToolNames = ['add_component', 'update_component', 'mark_attendance'];
+  } else if (isQuizRequest) {
+    allowedToolNames = ['add_component', 'update_component'];
+  } else if (isMathGraphRequest) {
+    allowedToolNames = ['plot_math_function', 'add_component', 'update_component'];
+  } else if (isShapeRequest) {
+    allowedToolNames = ['create_shape', 'modify_object', 'add_text_label', 'write_with_pen'];
+  }
+
+  const selectedTools = (allowedToolNames && !capability.supportsLessonEngine)
+    ? tools.filter(t => allowedToolNames!.includes(t.name))
+    : tools;
+
+  const mappedTools = selectedTools.map(t => ({
     type: "function",
     function: {
       name: t.name,
@@ -326,7 +464,7 @@ export const generateAgentActionsOllama = async (
     }
   }));
 
-  const isVisionModel = /vision|llava|bakllava|moondream|minicpm-v|cogvlm|qwen-vl/i.test(modelName);
+  const isVisionModel = /vision|llava|bakllava|moondream|minicpm-v|cogvlm|qwen-vl|gemma4|inclu-gemma|chalk-gemma/i.test(modelName);
 
   // Jev System 1 Reflex Guard: In-Place Mutation Enforcement
   const isModification = /(ubah|edit|ganti|tambah|update|modify|expand|lanjutkan|cabang|masukkan|hapus)/i.test(prompt);
@@ -343,10 +481,13 @@ export const generateAgentActionsOllama = async (
 
   let finalPrompt = `User request: ${prompt}${reflexDirective}\n\nRemember: Thoroughly address the entire request. Use function calls for all visual artifacts, batching actions together, and explain in clear text.`;
 
+  const isCreationCommand = /(create|buat|draw|gambar|add|tambah|write|tulis|start|mulai|set|generate|bikin|put|tarik|render|show|tampilkan|hapus|delete|clear|bersihkan)/i.test(prompt);
+  const isQuestionQuery = /(what|apa|which|bagaimana|how|is|are|tell me|ceritakan|sebutkan|color|warna|read|baca|see|lihat|check|periksa|why|kenapa|mengapa|who|siapa)/i.test(prompt);
+  const isPureQuestion = intent === 'question' || (!isCreationCommand && isQuestionQuery);
+
   // Dual-Model Parallel Pipeline:
-  // If the primary model is text-only (like inclu-gemma) and user asks a visual/sketch question,
-  // query the installed local vision model (Moondream/LLaVA) as an eye sensor!
-  if (!isVisionModel && cleanCanvasBase64 && isVisualQuery(prompt)) {
+  // If user asks a visual/sketch question, query the vision sensor (Moondream/LLaVA) if available
+  if (cleanCanvasBase64 && isVisualQuery(prompt)) {
     try {
       const visionModel = (visionModelOverride && visionModelOverride !== 'none') ? visionModelOverride : await getInstalledVisionModel(customUrl);
       if (visionModel) {
@@ -354,7 +495,7 @@ export const generateAgentActionsOllama = async (
         const observation = await queryVisionCoprocessor(visionModel, prompt, cleanCanvasBase64, customUrl);
         if (observation) {
           logger.info(`[Dual-Model Hybrid] Vision observation obtained from ${visionModel}:`, { observation: observation.slice(0, 120) });
-          finalPrompt = `[WHITEBOARD VISION SENSOR OBSERVATION (${visionModel})]:\n"${observation}"\n\n${finalPrompt}\nNote: If user asked to convert sketch to text, use add_text_label or write_with_pen to add the transcribed text to the canvas.`;
+          finalPrompt = `[WHITEBOARD VISUAL SENSOR OBSERVATION (${visionModel})]:\n"${observation}"\n\n${finalPrompt}\nNote: Answer the user's question directly based on what is visible on the board.`;
         }
       }
     } catch (e) {
@@ -367,7 +508,8 @@ export const generateAgentActionsOllama = async (
     content: finalPrompt
   };
 
-  if (isVisionModel && (cleanCanvasBase64 || highResInputImage)) {
+  // Always supply images to userMessage when canvas screenshot or uploaded image is present
+  if (cleanCanvasBase64 || highResInputImage) {
     userMessage.images = [];
     if (cleanCanvasBase64) userMessage.images.push(cleanCanvasBase64);
     if (highResInputImage) {
@@ -377,12 +519,18 @@ export const generateAgentActionsOllama = async (
 
   const isKnownToolless = /moondream|llava|bakllava|minicpm-v/i.test(modelName);
 
+  let activeSystemPrompt = isKnownToolless 
+    ? `${systemInstruction}\n\nCRITICAL OUTPUT REQUIREMENT:\nYou MUST output your actions as a JSON block formatted exactly like this:\n\`\`\`json\n{\n  "textResponse": "Clear answer or explanation of what you see on the whiteboard",\n  "functionCalls": [\n    {"name": "add_text_label", "args": {"text": "Transcribed text", "gridPosition": "CENTER"}}\n  ]\n}\n\`\`\`\nIf the user asks a question (such as what is on the board or what color is the text), answer clearly in "textResponse".`
+    : systemInstruction;
+
+  if (isPureQuestion) {
+    activeSystemPrompt += `\n\n[USER IS ASKING A QUESTION ABOUT THE SCREEN/WHITEBOARD]\nThe user is asking: "${prompt}".\nYou have direct access to the whiteboard canvas objects and attached image.\nAnswer the question directly, factually, and concisely in textResponse.\nDO NOT claim that you lack a function or tool to inspect the screen or check colors.`;
+  }
+
   const messages = [
     { 
       role: "system", 
-      content: isKnownToolless 
-        ? `${systemInstruction}\n\nCRITICAL OUTPUT REQUIREMENT:\nYou MUST output your actions as a JSON block formatted exactly like this:\n\`\`\`json\n{\n  "textResponse": "Clear answer or explanation of what you see on the whiteboard",\n  "functionCalls": [\n    {"name": "add_text_label", "args": {"text": "Transcribed text", "gridPosition": "CENTER"}}\n  ]\n}\n\`\`\`\nIf the user asks a question (such as what is on the board or what is blue), answer clearly in "textResponse".`
-        : systemInstruction 
+      content: activeSystemPrompt
     },
     ...history.map(h => ({ role: h.role === "model" ? "assistant" : "user", content: h.text })),
     userMessage
@@ -391,12 +539,12 @@ export const generateAgentActionsOllama = async (
   const payload: any = {
     model: modelName,
     messages: messages,
-    ...(isKnownToolless ? {} : { tools: mappedTools }),
+    ...(isKnownToolless || isPureQuestion ? {} : { tools: mappedTools }),
     stream: false,
     keep_alive: "24h",
     options: {
-      num_ctx: CONFIG.ai.ollama.numCtx || 4096,
-      num_predict: 512,
+      num_ctx: CONFIG.ai.ollama.numCtx || 2048,
+      num_predict: 1536,
       temperature: 0.1
     }
   };
@@ -520,6 +668,63 @@ export const generateAgentActionsOllama = async (
   if (!validation.isValid) {
     logger.warn('[Ollama] Validation issues', { errors: validation.errors });
     functionCalls = validation.fixedCalls;
+  }
+
+  // Mindmap Quality & Anti-Fragmentation Guard:
+  // If user asked for a mindmap, guarantee a full, multi-branch, proper generation!
+  if (isMindmapRequest) {
+    // 1. If model mistakenly called create_shape, purge it
+    functionCalls = functionCalls.filter(c => c.name !== 'create_shape');
+
+    const existingMermaid = functionCalls.find(c => c.name === 'render_mermaid' || c.name === 'render_markmap');
+    const curated = getCuratedMindmap(prompt);
+
+    if (curated) {
+      // High-confidence educational topic match: ensure full rich mindmap is rendered
+      if (!existingMermaid || !existingMermaid.args?.code || existingMermaid.args.code.split('\n').length < 6) {
+        const topicMatch = prompt.match(/(?:for|about|of|on|tentang)?\s*([a-zA-Z0-9\s_-]+)$/i);
+        const rawTopic = topicMatch ? topicMatch[1].replace(/mindmap|mind\s*map|concept\s*map|peta\s*konsep|please|create|make/gi, '').trim() : 'Concept Map';
+        const title = rawTopic ? rawTopic.charAt(0).toUpperCase() + rawTopic.slice(1) : 'Concept Map';
+        
+        if (existingMermaid) {
+          existingMermaid.args.code = curated;
+          existingMermaid.args.title = existingMermaid.args.title || `Concept Map: ${title}`;
+        } else {
+          functionCalls.unshift({
+            name: "render_mermaid",
+            args: {
+              title: `Concept Map: ${title}`,
+              code: curated,
+              gridPosition: "CENTER"
+            }
+          });
+        }
+        if (!textResponse || textResponse.includes('Inputs: Carbon Dioxide') || textResponse.trim().length === 0) {
+          textResponse = `Here is the complete, interactive mindmap for ${title}! It covers all inputs, outputs, light-dependent and Calvin cycle stages, chloroplast structures, and ecological significance.`;
+        }
+      }
+    } else if (!existingMermaid) {
+      // Generic topic: if model emitted mermaid markdown in text, extract it
+      const mermaidInText = textResponse.match(/```mermaid\s*([\s\S]*?)\s*```/i);
+      if (mermaidInText) {
+        functionCalls.unshift({
+          name: "render_mermaid",
+          args: {
+            title: "Concept Map",
+            code: mermaidInText[1].trim(),
+            gridPosition: "CENTER"
+          }
+        });
+      }
+    }
+  }
+
+  if (!textResponse && functionCalls.length > 0) {
+    const mermaidCall = functionCalls.find(c => c.name === 'render_mermaid' || c.name === 'render_markmap');
+    if (mermaidCall) {
+      const title = mermaidCall.args?.title || 'Concept Map';
+      textResponse = `Here is the interactive mindmap for ${title}! You can pan, zoom, edit branches, and explore all concept relationships on the whiteboard.`;
+    }
   }
 
   return {

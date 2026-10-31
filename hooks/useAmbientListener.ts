@@ -272,6 +272,20 @@ export function useAmbientListener(options: UseAmbientListenerOptions = {}) {
     isCommandRecordingRef.current = isVoiceCommandActive;
   }, [isVoiceCommandActive]);
 
+  // Pause ambient speech recognition when user opens manual voice chat in ChatInterface
+  const isVoiceListening = useStore((s) => s.isVoiceListening);
+  useEffect(() => {
+    if (isVoiceListening) {
+      if (speechRecognitionRef.current) {
+        try { speechRecognitionRef.current.stop(); } catch {}
+      }
+    } else {
+      if (isAmbientActiveRef.current && speechRecognitionRef.current) {
+        try { speechRecognitionRef.current.start(); } catch {}
+      }
+    }
+  }, [isVoiceListening]);
+
   // Clears active silence timer
   const clearSilenceTimeout = () => {
     if (silenceTimerRef.current) {
@@ -405,6 +419,25 @@ export function useAmbientListener(options: UseAmbientListenerOptions = {}) {
 
   const startAmbient = async () => {
     try {
+      // 0. Ensure microphone access permission is granted via getUserMedia
+      if (typeof window !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+            }
+          });
+          streamRef.current = stream;
+        } catch (err: any) {
+          logger.warn('[Ambient Listener] Microphone access not granted', err);
+          toast.warning('Microphone permission required for Hands-Free mode. Click to allow.');
+          setHandsFreeListening(false);
+          return;
+        }
+      }
+
       // 1. Try real-time Continuous Web Speech API first
       const SpeechRecognition = typeof window !== 'undefined' && ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
 
@@ -520,13 +553,18 @@ export function useAmbientListener(options: UseAmbientListenerOptions = {}) {
 
         recognition.onerror = (e: any) => {
           logger.warn('[Ambient Listener] WebSpeech error:', e.error);
+          if (e.error === 'not-allowed') {
+            isAmbientActiveRef.current = false;
+            setHandsFreeListening(false);
+            toast.error('Microphone access was denied. Allow microphone in your browser settings.');
+          }
         };
 
         recognition.onend = () => {
-          if (isAmbientActiveRef.current) {
+          if (isAmbientActiveRef.current && !useStore.getState().isVoiceListening) {
             try {
               setTimeout(() => {
-                if (isAmbientActiveRef.current && speechRecognitionRef.current) {
+                if (isAmbientActiveRef.current && !useStore.getState().isVoiceListening && speechRecognitionRef.current) {
                   speechRecognitionRef.current.start();
                 }
               }, 250);

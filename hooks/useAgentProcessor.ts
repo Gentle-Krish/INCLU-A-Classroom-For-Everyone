@@ -6,9 +6,9 @@ import { sounds } from '../utils/sounds';
 import { focusCanvasBounds, smoothFocusCanvas } from '../utils/canvasNavigation';
 
 // CONFIG: High-Speed Agent Action Emulation
-const MIN_REACTION_TIME = 30; 
-const MAX_REACTION_TIME = 80;
-const VERIFICATION_PAUSE = 40;
+const MIN_REACTION_TIME = 10; 
+const MAX_REACTION_TIME = 25;
+const VERIFICATION_PAUSE = 15;
 
 export const useAgentProcessor = (canvasRef: React.MutableRefObject<any>) => {
   const popAction = useStore(state => state.popAction);
@@ -57,9 +57,9 @@ export const useAgentProcessor = (canvasRef: React.MutableRefObject<any>) => {
       };
 
       // 2. High-Speed Variable Motion
-      const baseTime = 70;
-      const travelTime = dist * 0.08;
-      const duration = Math.min(220, Math.max(60, baseTime + travelTime));
+      const baseTime = 35;
+      const travelTime = dist * 0.04;
+      const duration = Math.min(100, Math.max(30, baseTime + travelTime));
       
       const startTime = performance.now();
 
@@ -92,7 +92,7 @@ export const useAgentProcessor = (canvasRef: React.MutableRefObject<any>) => {
     const canvas = canvasRef.current;
     const focus = async (bounds: { left: number; top: number; width: number; height: number }, targetZoom = 0.75) => {
       if (!canvas || canvas.__isPanning) return;
-      await smoothFocusCanvas(canvas, bounds, { duration: 800, showReticle: true, targetZoom, maxZoom: 0.75 });
+      await smoothFocusCanvas(canvas, bounds, { duration: 450, showReticle: true, targetZoom, maxZoom: 0.75 });
     };
     const followsContent = !['Panning...', 'Observing...', 'Deleting...'].includes(label);
     const previousObjects = new Set(canvas?.getObjects() || []);
@@ -109,25 +109,40 @@ export const useAgentProcessor = (canvasRef: React.MutableRefObject<any>) => {
 
     // 3. Click
     setClicking(true);
-    await wait(50);
+    await wait(20);
     setClicking(false);
 
     // 4. Act
     await taskFn();
+    const hasMoreActions = useStore.getState().actionQueue.length > 0;
     if (followsContent && canvas) {
       const added = canvas.getObjects().filter((obj: any) => !previousObjects.has(obj));
       const bounds = added.map((obj: any) => obj.getBoundingRect(true, true));
+      let targetBounds: { left: number; top: number; width: number; height: number } | null = null;
       if (bounds.length) {
         const left = Math.min(...bounds.map((b: any) => b.left));
         const top = Math.min(...bounds.map((b: any) => b.top));
-        await focus({ left, top,
+        targetBounds = {
+          left,
+          top,
           width: Math.max(...bounds.map((b: any) => b.left + b.width)) - left,
-          height: Math.max(...bounds.map((b: any) => b.top + b.height)) - top });
+          height: Math.max(...bounds.map((b: any) => b.top + b.height)) - top
+        };
       } else {
         const target = canvas.getObjects().find((obj: any) => obj.left === x && obj.top === y);
         const widget = Object.values(useStore.getState().domElements).find(el => el.x === x && el.y === y);
-        if (target) await focus(target.getBoundingRect(true, true));
-        else if (widget) await focus({ left: x - widget.width / 2, top: y - widget.height / 2, width: widget.width, height: widget.height });
+        if (target) targetBounds = target.getBoundingRect(true, true);
+        else if (widget) targetBounds = { left: x - widget.width / 2, top: y - widget.height / 2, width: widget.width, height: widget.height };
+      }
+
+      if (targetBounds) {
+        // Only await smooth camera refocus on the final action of the batch to eliminate delay
+        if (!hasMoreActions) {
+          await focus(targetBounds);
+        } else {
+          // Asynchronously pan without blocking queue execution
+          focus(targetBounds).catch(() => {});
+        }
       }
     }
 
@@ -814,6 +829,20 @@ export const useAgentProcessor = (canvasRef: React.MutableRefObject<any>) => {
 
         case 'MODIFY_PROPERTY': {
            const { objectId, elementText, property, value, newText, newStyle, newParentNodeText } = action.payload;
+           const isScribble = ['scribble', 'scribbles', 'drawing', 'drawings', 'sketch', 'sketches', 'coretan', 'path', 'paths'].includes((elementText || '').toLowerCase().trim());
+           if (isScribble && (property === 'fill' || property === 'stroke' || property === 'strokeColor' || property === 'color' || property === 'style')) {
+             const paths = canvas.getObjects().filter((o: any) => o.type === 'path' || o.id?.startsWith('draw_'));
+             if (paths.length > 0) {
+               await execute(paths[0].left || 0, paths[0].top || 0, 'Recoloring scribble...', () => {
+                 paths.forEach((p: any) => {
+                   if (p.stroke && p.stroke !== 'transparent') p.set('stroke', value);
+                   if (p.fill && p.fill !== 'transparent') p.set('fill', value);
+                 });
+                 canvas.requestRenderAll();
+               });
+               break;
+             }
+           }
            const target = findTargetObject(objectId, elementText);
            const resolvedText = newText || value;
            if (target) {
@@ -892,6 +921,17 @@ export const useAgentProcessor = (canvasRef: React.MutableRefObject<any>) => {
 
         case 'DELETE_OBJECT': {
            const { objectId, elementText } = action.payload;
+           const isScribble = ['scribble', 'scribbles', 'drawing', 'drawings', 'sketch', 'sketches', 'coretan', 'path', 'paths'].includes((elementText || '').toLowerCase().trim());
+           if (isScribble) {
+             const paths = canvas.getObjects().filter((o: any) => o.type === 'path' || o.id?.startsWith('draw_'));
+             if (paths.length > 0) {
+               await execute(paths[0].left || 0, paths[0].top || 0, 'Erasing scribble...', () => {
+                 paths.forEach((p: any) => canvas.remove(p));
+                 canvas.requestRenderAll();
+               });
+               break;
+             }
+           }
            const target = findTargetObject(objectId, elementText);
            if (target) {
              await execute(target.left, target.top, 'Deleting...', () => {

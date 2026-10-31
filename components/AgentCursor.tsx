@@ -67,8 +67,8 @@ export const AgentCursor: React.FC = () => {
       setDisplayMessage(agentMessage);
       setSpeechBubbleVisible(true);
       const isCancellation = agentMessage.toLowerCase().includes('cancel');
-      // For cancellations, auto-dismiss after 4 seconds; other messages 7-10 seconds
-      const duration = isCancellation ? 4000 : Math.min(10000, 5000 + agentMessage.length * 40);
+      // For cancellations, auto-dismiss after 4 seconds; other messages 8-12 seconds
+      const duration = isCancellation ? 4000 : Math.min(12000, 6000 + agentMessage.length * 40);
       const timer = setTimeout(() => {
         setSpeechBubbleVisible(false);
         setTimeout(() => {
@@ -83,19 +83,16 @@ export const AgentCursor: React.FC = () => {
     }
   }, [agentMessage]);
 
-  // When a new command is in action (isThinking or isActing), auto-dismiss previous speech overlay after 0.5s
+  // When a new command starts (isThinking transitions false -> true), dismiss any stale message from the previous turn
+  const prevThinkingRef = useRef(false);
   useEffect(() => {
-    if ((isThinking || isActing) && (displayMessage || agentMessage)) {
-      const timer = setTimeout(() => {
-        setSpeechBubbleVisible(false);
-        setTimeout(() => {
-          setDisplayMessage(null);
-          useStore.getState().setAgentMessage(null);
-        }, 200);
-      }, 500); // 0.5s delay when new command is in action
-      return () => clearTimeout(timer);
+    if (!prevThinkingRef.current && isThinking) {
+      setSpeechBubbleVisible(false);
+      setDisplayMessage(null);
+      useStore.getState().setAgentMessage(null);
     }
-  }, [isThinking, isActing, displayMessage, agentMessage]);
+    prevThinkingRef.current = isThinking;
+  }, [isThinking]);
 
   let timeStatus = 'Processing...';
   let timeColor = 'text-emerald-300';
