@@ -6,10 +6,16 @@ import '../widgets/clay_button.dart';
 import '../widgets/cream_scaffold.dart';
 
 class NameScreen extends StatefulWidget {
-  const NameScreen({super.key, required this.onSubmit, this.initialName = ''});
+  const NameScreen({
+    super.key,
+    required this.onSubmit,
+    this.initialName = '',
+    this.onHelp,
+  });
 
   final ValueChanged<String> onSubmit;
   final String initialName;
+  final VoidCallback? onHelp;
 
   @override
   State<NameScreen> createState() => _NameScreenState();
@@ -35,6 +41,7 @@ class _NameScreenState extends State<NameScreen> {
   @override
   Widget build(BuildContext context) {
     return CreamScaffold(
+      onHelp: widget.onHelp,
       child: LayoutBuilder(
         builder: (context, constraints) {
           return SingleChildScrollView(

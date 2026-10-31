@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../theme/chalk_theme.dart';
+import 'help_button.dart';
 
 class CreamScaffold extends StatelessWidget {
   const CreamScaffold({
     super.key,
     required this.child,
     this.resizeToAvoidBottomInset = true,
+    this.onHelp,
   });
 
   final Widget child;
@@ -14,6 +16,9 @@ class CreamScaffold extends StatelessWidget {
   /// Joining and connected screens stay full-height. The keyboard must not
   /// squash them into a strip after the class code is submitted.
   final bool resizeToAvoidBottomInset;
+
+  /// Optional persistent Help button callback allowing the user to replay onboarding.
+  final VoidCallback? onHelp;
 
   @override
   Widget build(BuildContext context) {
@@ -29,7 +34,22 @@ class CreamScaffold extends StatelessWidget {
             stops: [0, 0.72, 1],
           ),
         ),
-        child: SafeArea(child: child),
+        child: SafeArea(
+          child: Stack(
+            children: [
+              child,
+              if (onHelp != null)
+                Positioned(
+                  top: 8,
+                  right: 12,
+                  child: HelpButton(
+                    compact: true,
+                    onPressed: onHelp!,
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }

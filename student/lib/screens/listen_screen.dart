@@ -11,16 +11,19 @@ class ListenScreen extends StatelessWidget {
     this.digits = '',
     this.showDigits = true,
     this.footnote = 'Then say your name.',
+    this.onHelp,
   });
 
   final String headline;
   final String digits;
   final bool showDigits;
   final String footnote;
+  final VoidCallback? onHelp;
 
   @override
   Widget build(BuildContext context) {
     return CreamScaffold(
+      onHelp: onHelp,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24),
         child: Column(

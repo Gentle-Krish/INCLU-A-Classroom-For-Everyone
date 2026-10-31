@@ -17,6 +17,7 @@ class JoinScreen extends StatefulWidget {
     this.knownName,
     this.nearbyClasses,
     this.onSelectNearby,
+    this.onHelp,
   });
 
   final VoidCallback onScan;
@@ -25,6 +26,7 @@ class JoinScreen extends StatefulWidget {
   final String? knownName;
   final List<NearbyClass>? nearbyClasses;
   final void Function(NearbyClass room)? onSelectNearby;
+  final VoidCallback? onHelp;
 
   @override
   State<JoinScreen> createState() => _JoinScreenState();
@@ -69,6 +71,7 @@ class _JoinScreenState extends State<JoinScreen> {
     final canSubmit = ready && hasName;
 
     return CreamScaffold(
+      onHelp: widget.onHelp,
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
         child: Column(

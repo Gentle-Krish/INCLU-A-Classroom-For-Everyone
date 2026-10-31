@@ -21,8 +21,12 @@ import 'screens/listen_screen.dart';
 import 'screens/name_screen.dart';
 import 'screens/passage_screen.dart';
 import 'screens/scan_screen.dart';
+import 'whiteboard/whiteboard_model.dart';
+import 'whiteboard/whiteboard_viewer_screen.dart';
+import 'onboarding/onboarding_screen.dart';
+import 'onboarding/onboarding_store.dart';
 
-enum _Stage { scanning, nearby, listen, askName, pick, joining, connected, failed }
+enum _Stage { onboarding, scanning, nearby, listen, askName, pick, joining, connected, failed }
 
 /// Name, scan or code, socket, and the no-tap voice join.
 class JoinFlow extends StatefulWidget {
@@ -34,12 +38,15 @@ class JoinFlow extends StatefulWidget {
 
 class _JoinFlowState extends State<JoinFlow> {
   final _store = StudentStore();
+  final _onboardingStore = OnboardingStore();
   final _voice = VoiceJoin();
   final _socket = ClassSocket();
   final _beacons = BeaconListener();
   final _intents = JoinIntents();
+  final _whiteboard = WhiteboardState();
 
   _Stage _stage = _Stage.listen;
+  _Stage? _returnStage;
   int _epoch = 0;
   String _studentId = '';
   String? _name;
@@ -109,12 +116,47 @@ class _JoinFlowState extends State<JoinFlow> {
     final queued = _queued;
     _queued = null;
     final chosen = target ?? queued;
+
+    final completedOnboarding = await _onboardingStore.hasCompleted();
+    if (!completedOnboarding && mounted) {
+      if (chosen != null) {
+        _opening = chosen;
+        _returnStage = null;
+      }
+      setState(() {
+        _stage = _Stage.onboarding;
+      });
+      return;
+    }
+
     if (chosen != null) {
       _opening = chosen;
       await _begin(chosen);
       return;
     }
     await _lookForClasses();
+  }
+
+  Future<void> _onOnboardingComplete() async {
+    await _onboardingStore.setCompleted(true);
+    if (!mounted) return;
+    final returnStage = _returnStage;
+    _returnStage = null;
+    if (returnStage != null) {
+      setState(() {
+        _stage = returnStage;
+      });
+    } else {
+      await _lookForClasses();
+    }
+  }
+
+  void _openHelp() {
+    unawaited(_voice.stop());
+    setState(() {
+      _returnStage = _stage;
+      _stage = _Stage.onboarding;
+    });
   }
 
   void _onIntent(JoinTarget target) {
@@ -449,12 +491,16 @@ class _JoinFlowState extends State<JoinFlow> {
   @override
   Widget build(BuildContext context) {
     return switch (_stage) {
-      _Stage.scanning => JoiningScreen(message: _joiningMessage),
+      _Stage.onboarding => OnboardingScreen(
+        onComplete: () => unawaited(_onOnboardingComplete()),
+      ),
+      _Stage.scanning => JoiningScreen(message: _joiningMessage, onHelp: _openHelp),
       _Stage.nearby => NearbyScreen(
         classes: _nearby,
         onJoin: (room) => unawaited(_begin(JoinTarget(host: room.host, port: room.port, room: room.room))),
         onSayAgain: () => unawaited(_sayAgain()),
         onType: () => setState(() => _stage = _Stage.pick),
+        onHelp: _openHelp,
       ),
       _Stage.listen => ListenScreen(
         headline: _headline,
@@ -462,8 +508,12 @@ class _JoinFlowState extends State<JoinFlow> {
         footnote: _headline == 'Say your name'
             ? 'We will join with that name.'
             : 'Then say your name.',
+        onHelp: _openHelp,
       ),
-      _Stage.askName => NameScreen(onSubmit: (name) => unawaited(_onName(name))),
+      _Stage.askName => NameScreen(
+        onSubmit: (name) => unawaited(_onName(name)),
+        onHelp: _openHelp,
+      ),
       _Stage.pick => JoinScreen(
         knownName: _name,
         nearbyClasses: _nearby,
@@ -471,8 +521,9 @@ class _JoinFlowState extends State<JoinFlow> {
         onScan: () => unawaited(_onScan()),
         onSayAgain: () => unawaited(_sayAgain()),
         onSubmit: (room, address, {name}) => unawaited(_onTyped(room, address, name: name)),
+        onHelp: _openHelp,
       ),
-      _Stage.joining => JoiningScreen(message: _joiningMessage),
+      _Stage.joining => JoiningScreen(message: _joiningMessage, onHelp: _openHelp),
       _Stage.connected => ConnectedScreen(
         room: _room,
         name: _name ?? '',
@@ -484,11 +535,24 @@ class _JoinFlowState extends State<JoinFlow> {
         scores: _scores,
         onPlay: (quest, mode) => unawaited(_play(quest, mode)),
         onAsk: () => unawaited(_ask('Class')),
+        onViewWhiteboard: () {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => WhiteboardViewerScreen(
+                whiteboardState: _whiteboard,
+                socket: _socket,
+                room: _room,
+              ),
+            ),
+          );
+        },
+        onHelp: _openHelp,
       ),
       _Stage.failed => FailedScreen(
         title: _failTitle,
         detail: _failDetail,
         onRetry: () => unawaited(_onTryAgain()),
+        onHelp: _openHelp,
       ),
     };
   }

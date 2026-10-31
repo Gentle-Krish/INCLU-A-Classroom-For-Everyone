@@ -13,17 +13,20 @@ class NearbyScreen extends StatelessWidget {
     required this.onJoin,
     required this.onSayAgain,
     required this.onType,
+    this.onHelp,
   });
 
   final List<NearbyClass> classes;
   final void Function(NearbyClass room) onJoin;
   final VoidCallback onSayAgain;
   final VoidCallback onType;
+  final VoidCallback? onHelp;
 
   @override
   Widget build(BuildContext context) {
     final one = classes.length == 1;
     return CreamScaffold(
+      onHelp: onHelp,
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
         child: Column(

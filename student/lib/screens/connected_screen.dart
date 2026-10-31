@@ -22,6 +22,8 @@ class ConnectedScreen extends StatelessWidget {
     this.scores = const {},
     this.onPlay,
     this.onAsk,
+    this.onViewWhiteboard,
+    this.onHelp,
   });
 
   final String room;
@@ -34,6 +36,8 @@ class ConnectedScreen extends StatelessWidget {
   final Map<String, int> scores;
   final void Function(QuestPack quest, QuestMode mode)? onPlay;
   final VoidCallback? onAsk;
+  final VoidCallback? onViewWhiteboard;
+  final VoidCallback? onHelp;
 
   @override
   Widget build(BuildContext context) {
@@ -41,6 +45,7 @@ class ConnectedScreen extends StatelessWidget {
         ? 'Class started. Waiting for the teacher.'
         : 'Waiting for the teacher';
     return CreamScaffold(
+      onHelp: onHelp,
       resizeToAvoidBottomInset: false,
       child: CenteredClayBody(
         child: Column(
@@ -139,6 +144,13 @@ class ConnectedScreen extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             ClayButton(
+              label: 'Live Whiteboard',
+              color: ChalkColors.green,
+              lip: ChalkColors.greenLip,
+              onPressed: onViewWhiteboard,
+            ),
+            const SizedBox(height: 12),
+            ClayButton(
               label: 'Ask the board',
               color: ChalkColors.creamButton,
               lip: ChalkColors.creamLip,
@@ -148,8 +160,9 @@ class ConnectedScreen extends StatelessWidget {
             const SizedBox(height: 12),
             ClayButton(
               label: 'Class notes',
-              color: ChalkColors.green,
-              lip: ChalkColors.greenLip,
+              color: ChalkColors.creamButton,
+              lip: ChalkColors.creamLip,
+              foreground: ChalkColors.ink,
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(

@@ -38,20 +38,24 @@ class JoinIntents {
   }
 
   void listen(void Function(JoinTarget target) onTarget) {
-    _links.uriLinkStream.listen((uri) {
-      final target = mergeJoinTarget(uri: uri);
-      if (target != null) onTarget(target);
-    }, onError: (_) {});
-    _channel.setMethodCallHandler((call) async {
-      if (call.method != 'joinIntent') return;
-      final args = (call.arguments as Map?)?.cast<Object?, Object?>() ?? {};
-      final uriText = args['uri'] as String?;
-      final code = args['code'] as String?;
-      final target = mergeJoinTarget(
-        uri: uriText == null ? null : Uri.tryParse(uriText),
-        code: code,
-      );
-      if (target != null) onTarget(target);
-    });
+    try {
+      _links.uriLinkStream.listen((uri) {
+        final target = mergeJoinTarget(uri: uri);
+        if (target != null) onTarget(target);
+      }, onError: (_) {});
+    } catch (_) {}
+    try {
+      _channel.setMethodCallHandler((call) async {
+        if (call.method != 'joinIntent') return;
+        final args = (call.arguments as Map?)?.cast<Object?, Object?>() ?? {};
+        final uriText = args['uri'] as String?;
+        final code = args['code'] as String?;
+        final target = mergeJoinTarget(
+          uri: uriText == null ? null : Uri.tryParse(uriText),
+          code: code,
+        );
+        if (target != null) onTarget(target);
+      });
+    } catch (_) {}
   }
 }

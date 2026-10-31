@@ -1,7 +1,7 @@
-import 'package:chalk_student/main.dart';
-import 'package:chalk_student/screens/name_screen.dart';
-import 'package:chalk_student/theme/chalk_theme.dart';
-import 'package:chalk_student/widgets/clay_bot.dart';
+import 'package:inclu_student/main.dart';
+import 'package:inclu_student/screens/name_screen.dart';
+import 'package:inclu_student/theme/chalk_theme.dart';
+import 'package:inclu_student/widgets/clay_bot.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 

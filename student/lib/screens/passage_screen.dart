@@ -6,13 +6,15 @@ import '../widgets/clay_button.dart';
 import '../widgets/cream_scaffold.dart';
 
 class JoiningScreen extends StatelessWidget {
-  const JoiningScreen({super.key, required this.message});
+  const JoiningScreen({super.key, required this.message, this.onHelp});
 
   final String message;
+  final VoidCallback? onHelp;
 
   @override
   Widget build(BuildContext context) {
     return CreamScaffold(
+      onHelp: onHelp,
       resizeToAvoidBottomInset: false,
       child: CenteredClayBody(
         child: Column(
@@ -35,15 +37,18 @@ class FailedScreen extends StatelessWidget {
     required this.title,
     required this.detail,
     required this.onRetry,
+    this.onHelp,
   });
 
   final String title;
   final String detail;
   final VoidCallback onRetry;
+  final VoidCallback? onHelp;
 
   @override
   Widget build(BuildContext context) {
     return CreamScaffold(
+      onHelp: onHelp,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
         child: Column(

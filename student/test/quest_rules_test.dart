@@ -1,5 +1,5 @@
-import 'package:chalk_student/quest/fight_rules.dart';
-import 'package:chalk_student/quest/spoken_option.dart';
+import 'package:inclu_student/quest/fight_rules.dart';
+import 'package:inclu_student/quest/spoken_option.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

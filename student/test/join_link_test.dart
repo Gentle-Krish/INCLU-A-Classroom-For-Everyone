@@ -1,5 +1,5 @@
-import 'package:chalk_student/join/join_link.dart';
-import 'package:chalk_student/join/laptop_address.dart';
+import 'package:inclu_student/join/join_link.dart';
+import 'package:inclu_student/join/laptop_address.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
