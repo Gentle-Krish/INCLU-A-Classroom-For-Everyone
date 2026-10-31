@@ -48,7 +48,18 @@ const App: React.FC = () => {
   const pendingQuestWrite = useRef(false);
   const [isMobileLayout, setIsMobileLayout] = useState(false);
 
-  const { roomId, isViewer, startClass, openQuest, closeQuest, changeRoomId } = useSocketSync(canvasRef);
+  const {
+    roomId,
+    savedRooms,
+    isViewer,
+    startClass,
+    openQuest,
+    closeQuest,
+    changeRoomId,
+    switchRoom,
+    createRoom,
+    deleteRoom,
+  } = useSocketSync(canvasRef);
   const { loadSessions } = useStore();
 
   const {
@@ -323,9 +334,9 @@ const App: React.FC = () => {
             initial={{ y: -12, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-            className="h-[72px] bg-transparent flex items-center justify-between px-4 lg:px-6 shrink-0 z-20 relative gap-3 select-none"
+            className="h-[72px] bg-transparent flex items-center justify-between px-4 lg:px-6 shrink-0 relative z-50 gap-3 select-none"
           >
-            <div className="flex items-center gap-3 shrink-0 z-10">
+            <div className="flex items-center gap-3 shrink-0">
               <div
                 onClick={isWeb ? navigateToLanding : undefined}
                 className={`flex items-center gap-2.5 ${isWeb ? 'cursor-pointer' : ''}`}
@@ -343,7 +354,7 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 shrink-0 z-10">
+            <div className="flex items-center justify-end gap-2 shrink-0">
               <div className="flex items-center gap-1 rounded-full border border-[#E7DDD2] bg-[#FBF6F0] p-0.5">
                 <button type="button" aria-label="AI Assistant sidebar" aria-expanded={isAiDrawerOpen}
                   onClick={toggleAiDrawer}
@@ -369,6 +380,18 @@ const App: React.FC = () => {
                   Quest
                 </motion.button>
               )}
+
+              {/* Active Classroom Badge */}
+              <motion.button
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.96 }}
+                onClick={() => setIsShareOpen(true)}
+                title={`Classroom Code: ${roomId}. Click to manage or switch rooms.`}
+                className="flex items-center gap-1.5 rounded-full border border-[#E7DDD2] bg-[#FBF6F0] hover:bg-white px-3 py-1.5 text-xs font-bold text-[#6B4423] cursor-pointer shadow-2xs"
+              >
+                <span className="text-[10px] uppercase font-black tracking-wider text-[#A08B7A]">Room</span>
+                <span className="font-mono text-xs font-black text-[#3F2A1D]">{roomId || '----'}</span>
+              </motion.button>
 
               <motion.button
                 whileHover={{ scale: 1.04 }}
@@ -410,7 +433,11 @@ const App: React.FC = () => {
               isOpen={isShareOpen}
               onClose={() => setIsShareOpen(false)}
               roomId={roomId}
+              savedRooms={savedRooms}
               onRefreshRoomId={changeRoomId}
+              onSwitchRoom={switchRoom}
+              onCreateRoom={createRoom}
+              onDeleteRoom={deleteRoom}
               onStartClass={startClass}
             />
             <QuestPanel
@@ -436,11 +463,12 @@ const App: React.FC = () => {
                 if (!isAiDrawerOpen && !isAiModalOpen) toggleAiDrawer();
               }}
             />
+            <SettingsView isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
             <ToolOverlay />
             <AssistiveDock />
 
             {/* 3 & 4. CANVAS AREA & VERTICAL TOOLBAR */}
-            <main className="flex-1 min-w-0 relative h-full bg-[#FBF7F2] rounded-[28px] border border-[#E7DDD2] shadow-[0_16px_40px_rgba(63,42,29,0.06)] overflow-hidden flex flex-col">
+            <main className="flex-1 min-w-0 relative z-10 h-full bg-[#FBF7F2] rounded-[28px] border border-[#E7DDD2] shadow-[0_16px_40px_rgba(63,42,29,0.06)] overflow-hidden flex flex-col">
 
                {/* Dot Grid Background */}
                <div
@@ -530,11 +558,7 @@ const App: React.FC = () => {
                  )}
                </AnimatePresence>
 
-               <AnimatePresence>
-                 {isSettingsOpen && (
-                   <SettingsView onClose={() => setIsSettingsOpen(false)} />
-                 )}
-               </AnimatePresence>
+
 
                {/* Loading State */}
                <AnimatePresence>

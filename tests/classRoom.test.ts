@@ -8,6 +8,9 @@ import {
   publicRoster,
   rememberClassNumber,
   reduceClassRoster,
+  getSavedRooms,
+  createRoomSession,
+  removeRoomSession,
   type ClassStudentRecord,
 } from '../utils/classRoom';
 
@@ -116,5 +119,29 @@ describe('class number', () => {
     expect(rememberClassNumber(storage, () => 0.2)).toBe('2000');
     expect(saved.get(CLASS_NUMBER_STORAGE_KEY)).toBe('2000');
     expect(rememberClassNumber(storage, () => 0.1)).toBe('2000');
+  });
+
+  it('supports creating and managing multiple distinct rooms', () => {
+    const saved = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => saved.get(key) ?? null,
+      setItem: (key: string, value: string) => { saved.set(key, value); },
+    };
+
+    const initialRooms = getSavedRooms(storage, () => 0.1);
+    expect(initialRooms).toHaveLength(1);
+    expect(initialRooms[0].id).toBe('1000');
+
+    // Create second classroom
+    const { newRoom, allRooms } = createRoomSession(storage, 'Science Period 2', () => 0.85);
+    expect(newRoom.id).toBe('8500');
+    expect(newRoom.name).toBe('Science Period 2');
+    expect(allRooms).toHaveLength(2);
+    expect(saved.get(CLASS_NUMBER_STORAGE_KEY)).toBe('8500');
+
+    // Remove one room
+    const remaining = removeRoomSession(storage, '1000');
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].id).toBe('8500');
   });
 });

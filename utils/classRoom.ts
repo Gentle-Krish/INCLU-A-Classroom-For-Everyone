@@ -114,6 +114,14 @@ export function generateClassNumber(random: () => number = Math.random): string 
 }
 
 export const CLASS_NUMBER_STORAGE_KEY = 'chalk_class_number';
+export const SAVED_ROOMS_STORAGE_KEY = 'inclu_saved_rooms';
+
+export interface RoomSession {
+  id: string;
+  name: string;
+  createdAt: number;
+  lastActiveAt: number;
+}
 
 /** The same four digits after a refresh. A new code is minted only when none is stored. */
 export function rememberClassNumber(
@@ -133,6 +141,97 @@ export function rememberClassNumber(
     // The code still works for this page load.
   }
   return next;
+}
+
+/** Retrieve the list of active/saved rooms for this device. */
+export function getSavedRooms(
+  storage: { getItem(key: string): string | null; setItem(key: string, value: string): void },
+  random: () => number = Math.random,
+): RoomSession[] {
+  try {
+    const raw = storage.getItem(SAVED_ROOMS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const valid = parsed.filter((r) => r && typeof r.id === 'string' && /^\d{4}$/.test(r.id));
+        if (valid.length > 0) return valid;
+      }
+    }
+  } catch {}
+
+  const currentCode = rememberClassNumber(storage, random);
+  const initialRoom: RoomSession = {
+    id: currentCode,
+    name: `Classroom ${currentCode}`,
+    createdAt: Date.now(),
+    lastActiveAt: Date.now(),
+  };
+  try {
+    storage.setItem(SAVED_ROOMS_STORAGE_KEY, JSON.stringify([initialRoom]));
+  } catch {}
+  return [initialRoom];
+}
+
+/** Add or update a room session in storage. */
+export function saveRoomSession(
+  storage: { getItem(key: string): string | null; setItem(key: string, value: string): void },
+  room: RoomSession,
+): RoomSession[] {
+  const current = getSavedRooms(storage);
+  const existingIdx = current.findIndex((r) => r.id === room.id);
+  let updated: RoomSession[];
+  if (existingIdx >= 0) {
+    updated = current.map((r, i) => (i === existingIdx ? { ...r, ...room, lastActiveAt: Date.now() } : r));
+  } else {
+    updated = [{ ...room, lastActiveAt: Date.now() }, ...current];
+  }
+  updated.sort((a, b) => b.lastActiveAt - a.lastActiveAt);
+  try {
+    storage.setItem(SAVED_ROOMS_STORAGE_KEY, JSON.stringify(updated));
+  } catch {}
+  return updated;
+}
+
+/** Generate a brand-new classroom room with an isolated 4-digit code. */
+export function createRoomSession(
+  storage: { getItem(key: string): string | null; setItem(key: string, value: string): void },
+  name?: string,
+  random: () => number = Math.random,
+): { newRoom: RoomSession; allRooms: RoomSession[] } {
+  const current = getSavedRooms(storage, random);
+  const existingIds = new Set(current.map((r) => r.id));
+  let newId = generateClassNumber(random);
+  let attempts = 0;
+  while (existingIds.has(newId) && attempts < 50) {
+    newId = generateClassNumber(random);
+    attempts++;
+  }
+  const newRoom: RoomSession = {
+    id: newId,
+    name: name?.trim() || `Classroom ${newId}`,
+    createdAt: Date.now(),
+    lastActiveAt: Date.now(),
+  };
+  const allRooms = [newRoom, ...current];
+  try {
+    storage.setItem(SAVED_ROOMS_STORAGE_KEY, JSON.stringify(allRooms));
+    storage.setItem(CLASS_NUMBER_STORAGE_KEY, newId);
+  } catch {}
+  return { newRoom, allRooms };
+}
+
+/** Remove a room from saved list (preserves at least one room). */
+export function removeRoomSession(
+  storage: { getItem(key: string): string | null; setItem(key: string, value: string): void },
+  roomId: string,
+): RoomSession[] {
+  const current = getSavedRooms(storage);
+  if (current.length <= 1) return current;
+  const updated = current.filter((r) => r.id !== roomId);
+  try {
+    storage.setItem(SAVED_ROOMS_STORAGE_KEY, JSON.stringify(updated));
+  } catch {}
+  return updated;
 }
 
 /** Custom-scheme join link. Never an http or https URL. */

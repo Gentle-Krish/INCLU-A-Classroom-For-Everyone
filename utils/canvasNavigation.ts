@@ -59,7 +59,7 @@ export function calculateFocusTransform(
 
   const availableWidth = Math.max(1, width - leftInset - rightInset);
   const availableHeight = Math.max(1, height - topInset - bottomInset);
-  const maxZoom = options?.maxZoom ?? 1;
+  const maxZoom = options?.maxZoom ?? 1.05;
 
   const zoom = Math.max(
     0.01,
@@ -138,6 +138,10 @@ export function smoothFocusCanvas(
     const targetX = targetTransform[4];
     const targetY = targetTransform[5];
 
+    // Compute distance traveled to calculate dynamic zoom-dip emphasis
+    const travelDist = Math.hypot(targetX - startX, targetY - startY);
+    const dipAmount = travelDist > 120 ? Math.min(0.08, (travelDist / 1200) * 0.08) : 0;
+
     // Trigger visual camera autofocus reticle
     if (options?.showReticle !== false) {
       const store = useStore.getState();
@@ -178,7 +182,9 @@ export function smoothFocusCanvas(
       const progress = Math.min(elapsed / duration, 1);
       const ease = cameraEase(progress);
 
-      const curZoom = startZoom + (targetZoom - startZoom) * ease;
+      // Subtle dynamic breathe dip mid-flight creates an authentic focus pan & zoom feel
+      const midFlightDip = dipAmount * Math.sin(progress * Math.PI);
+      const curZoom = Math.max(0.05, (startZoom + (targetZoom - startZoom) * ease) - midFlightDip);
       const curX = startX + (targetX - startX) * ease;
       const curY = startY + (targetY - startY) * ease;
       const curVpt = [curZoom, 0, 0, curZoom, curX, curY];
@@ -209,4 +215,94 @@ export function smoothFocusCanvas(
     animId = requestAnimationFrame(step);
     if (currentAnimation) currentAnimation.id = animId;
   });
+}
+
+export interface WidgetPlacementOptions {
+  width: number;
+  height: number;
+  gap?: number;
+  preferredOrigin?: { x: number; y: number };
+}
+
+/**
+ * Calculates optimal, collision-free placement coordinates for new widgets
+ * on the infinite whiteboard canvas, preventing overlapping/stacking.
+ */
+export function findNextWidgetPosition(options: WidgetPlacementOptions): { x: number; y: number } {
+  const { width, height, gap = 52 } = options;
+  const store = useStore.getState();
+  const existing = Object.values(store.domElements || {});
+
+  // When board has no widgets yet:
+  if (existing.length === 0) {
+    if (options.preferredOrigin) {
+      return { x: options.preferredOrigin.x, y: options.preferredOrigin.y };
+    }
+    const vpt = store.viewportTransform || [1, 0, 0, 1, 0, 0];
+    const zoom = vpt[0] || 1;
+    const canvasW = typeof window !== 'undefined' ? window.innerWidth : 1920;
+    const canvasH = typeof window !== 'undefined' ? window.innerHeight : 1080;
+    const screenCenterX = Math.round((-vpt[4] + canvasW / 2) / zoom);
+    const screenCenterY = Math.round((-vpt[5] + canvasH / 2) / zoom);
+
+    // If near canvas default (0, 0 pan), place nicely near center (960, 540)
+    if (Math.abs(vpt[4]) < 50 && Math.abs(vpt[5]) < 50) {
+      return { x: 960, y: 540 };
+    }
+    return { x: screenCenterX, y: screenCenterY };
+  }
+
+  // Convert existing widgets to bounding boxes in canvas world coordinates
+  const boxes = existing.map((el) => ({
+    left: el.x - el.width / 2,
+    right: el.x + el.width / 2,
+    top: el.y - el.height / 2,
+    bottom: el.y + el.height / 2,
+    centerX: el.x,
+    centerY: el.y,
+    width: el.width,
+    height: el.height,
+  }));
+
+  const collidesWithAny = (cx: number, cy: number, w: number, h: number, margin = 20) => {
+    const l1 = cx - w / 2 - margin;
+    const r1 = cx + w / 2 + margin;
+    const t1 = cy - h / 2 - margin;
+    const b1 = cy + h / 2 + margin;
+
+    return boxes.some((b) => !(l1 >= b.right || r1 <= b.left || t1 >= b.bottom || b1 <= b.top));
+  };
+
+  // Sort boxes left-to-right
+  boxes.sort((a, b) => a.left - b.left);
+  const rightmost = boxes.reduce((max, b) => (b.right > max.right ? b : max), boxes[0]);
+  const leftmost = boxes[0];
+  const maxBottom = boxes.reduce((max, b) => (b.bottom > max.bottom ? b : max), boxes[0]);
+
+  // Strategy 1: Place to the right of the rightmost widget along the same baseline
+  const candidateRightX = Math.round(rightmost.right + gap + width / 2);
+  const candidateRightY = Math.round(rightmost.centerY);
+
+  // If row span is reasonable (<= 2400px), place horizontally
+  const totalRowSpan = candidateRightX + width / 2 - leftmost.left;
+  if (totalRowSpan <= 2400 && !collidesWithAny(candidateRightX, candidateRightY, width, height)) {
+    return { x: candidateRightX, y: candidateRightY };
+  }
+
+  // Strategy 2: Wrap to next row beneath the current content
+  const candidateBelowX = Math.round(leftmost.centerX);
+  const candidateBelowY = Math.round(maxBottom.bottom + gap + height / 2);
+  if (!collidesWithAny(candidateBelowX, candidateBelowY, width, height)) {
+    return { x: candidateBelowX, y: candidateBelowY };
+  }
+
+  // Strategy 3: Horizontal scan with collision avoidance
+  let testX = Math.round(rightmost.right + gap + width / 2);
+  let testY = Math.round(rightmost.centerY);
+  let attempts = 0;
+  while (collidesWithAny(testX, testY, width, height) && attempts < 20) {
+    testX += gap + 40;
+    attempts++;
+  }
+  return { x: testX, y: testY };
 }

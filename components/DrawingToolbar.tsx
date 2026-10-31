@@ -60,12 +60,8 @@ const APPS = [
 
 type PanelId = 'draw' | 'shapes' | 'text' | 'apps';
 
-interface FlyoutProps { open: boolean; children: React.ReactNode; align?: 'top' | 'bottom' | 'center'; }
-const Flyout: React.FC<FlyoutProps> = ({ open, children, align = 'top' }) => {
-  let positionClass = 'top-0';
-  if (align === 'bottom') positionClass = 'bottom-0';
-  if (align === 'center') positionClass = 'top-1/2 -translate-y-1/2';
-
+interface FlyoutProps { open: boolean; children: React.ReactNode; className?: string; }
+const Flyout: React.FC<FlyoutProps> = ({ open, children, className = '' }) => {
   return (
     <AnimatePresence>
       {open && (
@@ -74,7 +70,7 @@ const Flyout: React.FC<FlyoutProps> = ({ open, children, align = 'top' }) => {
           animate={{ opacity: 1, x: 0, scale: 1 }}
           exit={{ opacity: 0, x: -8, scale: 0.94 }}
           transition={{ type: 'spring', stiffness: 420, damping: 30 }}
-          className={`absolute left-full ml-3.5 z-[100] bg-[#FFF6EE]/95 backdrop-blur-2xl border border-[#E7DDD2] shadow-2xl shadow-[#3F2A1D]/10 rounded-[1.75rem] p-3.5 w-56 ${positionClass}`}
+          className={`absolute left-full ml-3.5 z-[100] bg-[#FFF6EE]/95 backdrop-blur-2xl border border-[#E7DDD2] shadow-2xl shadow-[#3F2A1D]/10 rounded-[1.75rem] p-3.5 w-60 overflow-y-auto overscroll-contain flex flex-col ${className || 'top-0 max-h-full'}`}
         >
           {children}
         </motion.div>
@@ -224,21 +220,56 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
           <div className="w-5 h-px bg-[#E7DDD2]" />
 
           {/* 2. DRAWING (Pencil, Eraser, Colors, Thickness combined) */}
-          <div className="relative">
-            <Btn
-              icon={activeTool === 'ERASER' ? Eraser : Pencil}
-              active={openPanel === 'draw' || isDrawingMode}
-              title="Draw and erase (P)"
-              onClick={() => {
-                if (!isDrawingMode) {
-                  setActiveTool('PENCIL');
-                }
-                toggle('draw');
-              }}
-            >
-              <ChevronRight size={7} className="absolute right-0.5 bottom-0.5 opacity-50" />
-            </Btn>
-          <Flyout open={openPanel === 'draw'}>
+          <Btn
+            icon={activeTool === 'ERASER' ? Eraser : Pencil}
+            active={openPanel === 'draw' || isDrawingMode}
+            title="Draw and erase (P)"
+            onClick={() => {
+              if (!isDrawingMode) {
+                setActiveTool('PENCIL');
+              }
+              toggle('draw');
+            }}
+          >
+            <ChevronRight size={7} className="absolute right-0.5 bottom-0.5 opacity-50" />
+          </Btn>
+
+          {/* 3. SHAPES (All Shapes + Fill options combined) */}
+          <Btn
+            icon={ShapeIcon}
+            active={openPanel === 'shapes' || !!activeShape}
+            title="Shapes and lines (R)"
+            onClick={() => toggle('shapes')}
+          >
+            <ChevronRight size={7} className="absolute right-0.5 bottom-0.5 opacity-50" />
+          </Btn>
+
+          {/* 4. TEXT (Text Tool + Font & Typography options combined) */}
+          <Btn
+            icon={Type}
+            active={openPanel === 'text' || activeTool === 'TEXT'}
+            title="Text options (T)"
+            onClick={() => {
+              if (activeTool !== 'TEXT') {
+                setActiveTool('TEXT');
+              }
+              toggle('text');
+            }}
+          >
+            <ChevronRight size={7} className="absolute right-0.5 bottom-0.5 opacity-50" />
+          </Btn>
+
+          {/* 5. IMAGE */}
+          <Btn icon={ImageIcon} title="Insert image" onClick={onImageUpload} />
+
+          <div className="w-5 h-px bg-[#E7DDD2]" />
+
+          {/* 6. APPS & WIDGETS */}
+          <Btn icon={MoreHorizontal} active={openPanel === 'apps'} title="Tools" onClick={() => toggle('apps')} />
+
+          {/* ── Flyout Popups: Anchored cleanly within vertical toolbar bounds ── */}
+          {/* Flyout 1: Drawing Mode */}
+          <Flyout open={openPanel === 'draw'} className="-top-[5px] max-h-[calc(100%+5px)]">
             <div className="text-[9px] font-black uppercase tracking-widest text-[#A08B7A] mb-2">{t('scribbleMode', 'Drawing mode')}</div>
             <div className="flex gap-1 mb-3">
               <button
@@ -297,19 +328,9 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
               ))}
             </div>
           </Flyout>
-        </div>
 
-        {/* 3. SHAPES (All Shapes + Fill options combined) */}
-        <div className="relative">
-          <Btn
-            icon={ShapeIcon}
-            active={openPanel === 'shapes' || !!activeShape}
-            title="Shapes and lines (R)"
-            onClick={() => toggle('shapes')}
-          >
-            <ChevronRight size={7} className="absolute right-0.5 bottom-0.5 opacity-50" />
-          </Btn>
-          <Flyout open={openPanel === 'shapes'} align="center">
+          {/* Flyout 2: Shapes & Lines */}
+          <Flyout open={openPanel === 'shapes'}>
             <div className="text-[9px] font-black uppercase tracking-widest text-[#A08B7A] mb-2">{t('selectShape', 'Choose a shape')}</div>
             <div className="grid grid-cols-4 gap-1.5 mb-3">
               {ALL_SHAPES.map(s => (
@@ -337,32 +358,9 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
               {isShapeFilled ? t('fillActive', 'Fill on') : t('outlineOnly', 'Outline only')}
             </button>
           </Flyout>
-        </div>
 
-        {/* 4. TEXT (Text Tool + Font & Typography options combined) */}
-        <div className="relative">
-          <Btn
-            icon={Type}
-            active={openPanel === 'text' || activeTool === 'TEXT'}
-            title="Text (T) — Add text to whiteboard"
-            onClick={() => {
-              if (openPanel === 'text') {
-                close();
-              }
-              window.dispatchEvent(new CustomEvent('addCanvasTextAtCenter'));
-              setActiveTool('SELECT');
-            }}
-          >
-            <ChevronRight
-              size={7}
-              className="absolute right-0.5 bottom-0.5 opacity-50 hover:opacity-100"
-              onClick={(e) => {
-                e.stopPropagation();
-                toggle('text');
-              }}
-            />
-          </Btn>
-          <Flyout open={openPanel === 'text'} align="center">
+          {/* Flyout 3: Text Tool */}
+          <Flyout open={openPanel === 'text'} className="-top-[3px] max-h-[calc(100%+3px)]">
             {/* Primary Action Button: Add Text to Whiteboard */}
             <motion.button
               whileHover={{ scale: 1.02 }}
@@ -377,20 +375,30 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
             </motion.button>
 
             <div className="text-[9px] font-black uppercase tracking-widest text-[#A08B7A] mb-2">{t('fontStyle', 'Font')}</div>
-            {FONTS.map(f => (
-              <button
-                key={f.value}
-                onClick={() => setFontFamily(f.value)}
-                style={{ fontFamily: f.value }}
-                className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold mb-0.5 transition-colors ${
-                  fontFamily === f.value ? 'bg-[#6B4423] text-white font-bold' : 'hover:bg-[#F6F0E8] text-[#3F2A1D]'
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
+            <div className="grid grid-cols-2 gap-1.5 mb-3">
+              {FONTS.map((f, idx) => {
+                const isSelected = fontFamily === f.value;
+                const isLastOdd = idx === FONTS.length - 1 && FONTS.length % 2 === 1;
+                return (
+                  <button
+                    key={f.value}
+                    onClick={() => setFontFamily(f.value)}
+                    style={{ fontFamily: f.value }}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      isLastOdd ? 'col-span-2 text-center' : 'text-left'
+                    } ${
+                      isSelected
+                        ? 'bg-[#6B4423] text-white font-bold shadow-xs'
+                        : 'bg-[#F6F0E8]/70 hover:bg-[#F6F0E8] text-[#3F2A1D]'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                );
+              })}
+            </div>
             <div className="text-[9px] font-black uppercase tracking-widest text-[#A08B7A] mt-3 mb-1.5">{t('textSize', 'Text size')}</div>
-            <div className="grid grid-cols-3 gap-1 mb-2">
+            <div className="grid grid-cols-3 gap-1.5 mb-2.5">
               {FONT_SIZE_PRESETS.map(preset => (
                 <button
                   key={preset.name}
@@ -409,12 +417,12 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
                 </button>
               ))}
             </div>
-            <div className="flex gap-1 flex-wrap">
+            <div className="grid grid-cols-7 gap-1">
               {[14, 18, 24, 28, 36, 48, 56].map(s => (
                 <button
                   key={s}
                   onClick={() => setFontSize(s)}
-                  className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-colors cursor-pointer ${
+                  className={`py-1 rounded-md text-[10px] font-bold text-center transition-colors cursor-pointer ${
                     fontSize === s ? 'bg-[#6B4423] text-white' : 'bg-[#F6F0E8] text-[#6B4423] hover:bg-[#F4B183]/35'
                   }`}
                 >
@@ -423,17 +431,9 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
               ))}
             </div>
           </Flyout>
-        </div>
 
-        {/* 5. IMAGE */}
-        <Btn icon={ImageIcon} title="Insert image" onClick={onImageUpload} />
-
-        <div className="w-5 h-px bg-[#E7DDD2]" />
-
-        {/* 6. APPS & WIDGETS */}
-        <div className="relative">
-          <Btn icon={MoreHorizontal} active={openPanel === 'apps'} title="Tools" onClick={() => toggle('apps')} />
-          <Flyout open={openPanel === 'apps'} align="bottom">
+          {/* Flyout 4: Apps & Widgets */}
+          <Flyout open={openPanel === 'apps'}>
             <div className="text-[9px] font-black uppercase tracking-widest text-[#A08B7A] mb-2">{t('classToolsAndWidgets', 'Class tools')}</div>
             <div className="grid grid-cols-2 gap-1.5">
               {APPS.map(app => (
@@ -448,7 +448,6 @@ export const DrawingToolbar: React.FC<DrawingToolbarProps> = ({
               ))}
             </div>
           </Flyout>
-        </div>
 
       </motion.div>
     </div>

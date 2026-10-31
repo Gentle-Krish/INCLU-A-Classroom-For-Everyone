@@ -7,6 +7,7 @@ import {
 import { useStore } from '../store';
 import { toast } from '../utils/toast';
 import { useAmbientListener } from '../hooks/useAmbientListener';
+import { findNextWidgetPosition } from '../utils/canvasNavigation';
 
 export const AssistiveDock: React.FC = () => {
   const {
@@ -24,53 +25,134 @@ export const AssistiveDock: React.FC = () => {
 
   if (!isAssistiveMode) return null;
 
+  const handleLaunchQuickAttendance = () => {
+    // If attendance was open as a legacy screen floating tool, close it
+    if (useStore.getState().isAttendanceOpen) {
+      toggleAttendance();
+    }
+
+    // If attendance already exists on canvas, smoothly pan & zoom to it!
+    const existing = Object.values(useStore.getState().domElements).find(
+      (el) => el.componentType === 'ATTENDANCE' || el.componentType === 'PRESENSI'
+    );
+    if (existing) {
+      window.dispatchEvent(
+        new CustomEvent('focusCanvasPlaceholder', {
+          detail: { x: existing.x, y: existing.y, width: existing.width, height: existing.height }
+        })
+      );
+      toast.info('Focus shifted to Attendance Tracker');
+      return;
+    }
+
+    const width = 380;
+    const height = 490;
+    const { x, y } = findNextWidgetPosition({ width, height });
+    const id = `attendance_${Date.now()}`;
+
+    updateDomElement(id, {
+      id,
+      html: '<div>Attendance</div>',
+      componentType: 'ATTENDANCE',
+      config: { title: 'Class attendance' },
+      x,
+      y,
+      width,
+      height,
+      scaleX: 1,
+      scaleY: 1,
+      rotation: 0,
+      zIndex: 10
+    });
+
+    window.dispatchEvent(
+      new CustomEvent('addCanvasPlaceholder', {
+        detail: { id, x, y, width, height, autofocus: true }
+      })
+    );
+    toast.success('Attendance tracker placed on whiteboard.');
+  };
+
   const handleLaunchQuickTimer = () => {
+    const width = 340;
+    const height = 460;
+    const { x, y } = findNextWidgetPosition({ width, height });
     const id = `timer_${Date.now()}`;
+
     updateDomElement(id, {
       id,
       html: '<div>Timer</div>',
       componentType: 'TIMER',
       config: { seconds: 300, mode: 'TIMER' },
-      x: 960,
-      y: 540,
-      width: 340,
-      height: 460,
+      x,
+      y,
+      width,
+      height,
       scaleX: 1,
       scaleY: 1,
       rotation: 0,
       zIndex: 10
     });
-    window.dispatchEvent(new CustomEvent('addCanvasPlaceholder', {
-      detail: { id, x: 960, y: 540, width: 340, height: 460, autofocus: true }
-    }));
-    toast.success('5-minute timer is on the board.');
+
+    window.dispatchEvent(
+      new CustomEvent('addCanvasPlaceholder', {
+        detail: { id, x, y, width, height, autofocus: true }
+      })
+    );
+    toast.success('5-minute timer placed on whiteboard.');
   };
 
   const handleLaunchRandomWheel = () => {
+    const width = 440;
+    const height = 480;
+    const { x, y } = findNextWidgetPosition({ width, height });
     const id = `wheel_${Date.now()}`;
+
     updateDomElement(id, {
       id,
       html: '<div>Wheel</div>',
       componentType: 'SPIN_WHEEL',
       config: { title: 'Student Answer Turn' },
-      x: 960,
-      y: 540,
-      width: 440,
-      height: 480,
+      x,
+      y,
+      width,
+      height,
       scaleX: 1,
       scaleY: 1,
       rotation: 0,
       zIndex: 10
     });
-    window.dispatchEvent(new CustomEvent('addCanvasPlaceholder', {
-      detail: { id, x: 960, y: 540, width: 440, height: 480, autofocus: true }
-    }));
-    toast.success('Random student wheel is on the board.');
+
+    window.dispatchEvent(
+      new CustomEvent('addCanvasPlaceholder', {
+        detail: { id, x, y, width, height, autofocus: true }
+      })
+    );
+    toast.success('Random student wheel placed on whiteboard.');
   };
 
   const handleResetCamera = () => {
-    setViewport(1, [1, 0, 0, 1, 0, 0]);
-    toast.success('🧭 Canvas view centered');
+    const existing = Object.values(useStore.getState().domElements);
+    if (existing.length > 0) {
+      const minX = Math.min(...existing.map((el) => el.x - el.width / 2));
+      const maxX = Math.max(...existing.map((el) => el.x + el.width / 2));
+      const minY = Math.min(...existing.map((el) => el.y - el.height / 2));
+      const maxY = Math.max(...existing.map((el) => el.y + el.height / 2));
+      window.dispatchEvent(
+        new CustomEvent('focusCanvasPlaceholder', {
+          detail: {
+            x: (minX + maxX) / 2,
+            y: (minY + maxY) / 2,
+            width: Math.max(maxX - minX, 400),
+            height: Math.max(maxY - minY, 350)
+          }
+        })
+      );
+      toast.success('🧭 Canvas view framed to widgets');
+    } else {
+      setViewport(1, [1, 0, 0, 1, 0, 0]);
+      toast.success('🧭 Canvas view centered');
+    }
   };
 
   return (
@@ -140,12 +222,9 @@ export const AssistiveDock: React.FC = () => {
 
         {/* 1. Quick Attendance */}
         <button
-          onClick={() => {
-            toggleAttendance();
-            toast.info('Attendance list opened');
-          }}
+          onClick={handleLaunchQuickAttendance}
           className="w-14 h-14 rounded-2xl bg-[#6B4423] hover:bg-[#3F2A1D] active:scale-90 text-[#FFF6EE] flex flex-col items-center justify-center gap-0.5 shadow-md transition cursor-pointer"
-          title="Quick attendance"
+          title="Quick attendance on whiteboard"
         >
           <Users size={22} />
           <span className="text-[9px] font-black uppercase">Roll</span>

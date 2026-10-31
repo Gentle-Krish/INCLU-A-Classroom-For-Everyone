@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../store';
 import { useTranslation } from '../utils/translations';
+import { findNextWidgetPosition } from '../utils/canvasNavigation';
 
 export const QuizTool: React.FC = () => {
   const { t } = useTranslation();
@@ -79,22 +80,25 @@ export const QuizTool: React.FC = () => {
   const handleSpawnTemplate = (qt: typeof quizTypes[number]) => {
     const id = `quiz_${Date.now()}`;
     const store = useStore.getState();
+    const width = 480;
+    const height = 440;
+    const { x, y } = findNextWidgetPosition({ width, height });
     store.updateDomElement(id, {
       id,
       html: '<div>Quiz</div>',
       componentType: qt.componentType,
       config: qt.defaultConfig,
-      x: 960,
-      y: 540,
-      width: 480,
-      height: 440,
+      x,
+      y,
+      width,
+      height,
       scaleX: 1,
       scaleY: 1,
       rotation: 0,
       zIndex: 15
     });
     window.dispatchEvent(new CustomEvent('addCanvasPlaceholder', {
-      detail: { id, x: 960, y: 540, width: 480, height: 440 }
+      detail: { id, x, y, width, height, autofocus: true }
     }));
     if (store.isQuizOpen) store.toggleQuiz();
   };

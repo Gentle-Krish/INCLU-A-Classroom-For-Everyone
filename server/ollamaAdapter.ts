@@ -221,6 +221,71 @@ function extractToolsAndCleanText(rawText: string): { functionCalls: any[]; clea
   return { functionCalls, cleanText };
 }
 
+
+/**
+ * Fast Vision Co-Processor (e.g. Moondream or LLaVA):
+ * Transcribes or visually analyzes the whiteboard screenshot when a text model (like Gemma) needs visual eyes.
+ */
+async function queryVisionCoprocessor(
+  visionModel: string,
+  userPrompt: string,
+  canvasBase64: string,
+  customUrl?: string
+): Promise<string | null> {
+  try {
+    const url = getOllamaUrl(customUrl);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25_000);
+    const res = await fetch(`${url}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: visionModel,
+        messages: [
+          {
+            role: 'user',
+            content: `Examine this whiteboard screenshot carefully to help the teacher.
+Teacher asks: "${userPrompt}".
+Transcribe any handwritten text, read drawings, and identify colors (such as blue, red, green) or shapes present.
+Be direct, concise, and factual.`,
+            images: [canvasBase64]
+          }
+        ],
+        stream: false,
+        options: {
+          temperature: 0.1,
+          num_predict: 256
+        }
+      })
+    });
+    clearTimeout(timeoutId);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.message?.content?.trim() || null;
+  } catch (err) {
+    logger.warn('[Dual-Model] Vision coprocessor query failed:', err);
+    return null;
+  }
+}
+
+async function getInstalledVisionModel(customUrl?: string): Promise<string | null> {
+  try {
+    const url = getOllamaUrl(customUrl);
+    const res = await fetch(`${url}/api/tags`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const names: string[] = (data.models || []).map((m: any) => String(m.name || ''));
+    return names.find(n => /moondream|llava|bakllava|minicpm-v/i.test(n)) || null;
+  } catch {
+    return null;
+  }
+}
+
+function isVisualQuery(prompt: string): boolean {
+  return /sketch|drawing|handwriting|tulisan|gambar|papan|board|warna|color|blue|biru|red|merah|baca|read|ocr|lihat|see|transcribe|convert/i.test(prompt);
+}
+
 export const generateAgentActionsOllama = async (
   prompt: string,
   canvasImageBase64: string,
@@ -275,9 +340,30 @@ export const generateAgentActionsOllama = async (
     reflexDirective = `\n\n[JEV SYSTEM 1 DECISION: IN-PLACE MUTATION ONLY]\nAn existing diagram is already on the canvas (ID: "${existingDiagramKeys[0]}"). DO NOT call render_mermaid or create a duplicate widget. You MUST call update_component with objectId="${existingDiagramKeys[0]}", action="REPLACE" or "APPEND", and provide the updated complete Mermaid code.`;
   }
 
+  let finalPrompt = `User request: ${prompt}${reflexDirective}\n\nRemember: Thoroughly address the entire request. Use function calls for all visual artifacts, batching actions together, and explain in clear text.`;
+
+  // Dual-Model Parallel Pipeline:
+  // If the primary model is text-only (like inclu-gemma) and user asks a visual/sketch question,
+  // query the installed local vision model (Moondream/LLaVA) as an eye sensor!
+  if (!isVisionModel && cleanCanvasBase64 && isVisualQuery(prompt)) {
+    try {
+      const visionModel = await getInstalledVisionModel(customUrl);
+      if (visionModel) {
+        logger.info(`[Dual-Model Hybrid] Invoking Vision Coprocessor (${visionModel}) for prompt: ${prompt}`);
+        const observation = await queryVisionCoprocessor(visionModel, prompt, cleanCanvasBase64, customUrl);
+        if (observation) {
+          logger.info(`[Dual-Model Hybrid] Vision observation obtained from ${visionModel}:`, { observation: observation.slice(0, 120) });
+          finalPrompt = `[WHITEBOARD VISION SENSOR OBSERVATION (${visionModel})]:\n"${observation}"\n\n${finalPrompt}\nNote: If user asked to convert sketch to text, use add_text_label or write_with_pen to add the transcribed text to the canvas.`;
+        }
+      }
+    } catch (e) {
+      logger.warn('[Dual-Model Hybrid] Failed to query vision coprocessor:', e);
+    }
+  }
+
   const userMessage: any = {
     role: "user",
-    content: `User request: ${prompt}${reflexDirective}\n\nRemember: Thoroughly address the entire request. Use function calls for all visual artifacts, batching actions together, and explain in clear text.`
+    content: finalPrompt
   };
 
   if (isVisionModel && (cleanCanvasBase64 || highResInputImage)) {
@@ -288,16 +374,23 @@ export const generateAgentActionsOllama = async (
     }
   }
 
+  const isKnownToolless = /moondream|llava|bakllava|minicpm-v/i.test(modelName);
+
   const messages = [
-    { role: "system", content: systemInstruction },
+    { 
+      role: "system", 
+      content: isKnownToolless 
+        ? `${systemInstruction}\n\nCRITICAL OUTPUT REQUIREMENT:\nYou MUST output your actions as a JSON block formatted exactly like this:\n\`\`\`json\n{\n  "textResponse": "Clear answer or explanation of what you see on the whiteboard",\n  "functionCalls": [\n    {"name": "add_text_label", "args": {"text": "Transcribed text", "gridPosition": "CENTER"}}\n  ]\n}\n\`\`\`\nIf the user asks a question (such as what is on the board or what is blue), answer clearly in "textResponse".`
+        : systemInstruction 
+    },
     ...history.map(h => ({ role: h.role === "model" ? "assistant" : "user", content: h.text })),
     userMessage
   ];
 
-  const payload = {
+  const payload: any = {
     model: modelName,
     messages: messages,
-    tools: mappedTools,
+    ...(isKnownToolless ? {} : { tools: mappedTools }),
     stream: false,
     keep_alive: "24h",
     options: {

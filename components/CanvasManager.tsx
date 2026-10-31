@@ -1227,7 +1227,7 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
     const activeObjects = canvas.getActiveObjects();
     
     activeObjects.forEach((obj: any) => {
-      if (obj.type === 'i-text' || obj.type === 'text') {
+      if (obj.type === 'i-text' || obj.type === 'text' || obj.type === 'textbox') {
         obj.set({ fontFamily, fontSize });
       }
       if (obj.stroke !== undefined) obj.set({ stroke: brushColor });

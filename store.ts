@@ -4,6 +4,7 @@ import { CONFIG, CHALK_LOCAL_DOWNLOAD_MODEL, OLLAMA_MODEL, STRONG_GEMMA_MODEL } 
 import { AgentState, AgentAction, Point, ChatMessage, DomElementState, CreatorTool, FontFamily, BoardSession, PageState, AiPreference, LessonPlan, MindmapNodeRecord, LessonPhase, LessonStep, TranscribeMode, VoiceConfig, AttachedDocument, ExperimentalConfig, SupportedLanguage, SmartboardLayoutMode, ClassRosterEntry, PublicQuestList, QuestScoreBoard, QuestTally, StudentAsk } from './types';
 import { saveSessionToDb, getSessionFromDb, deleteSessionFromDb, getAllSessionsFromDb } from './services/db';
 import { findMatchingMindmapNode } from './utils/mindmapLayout';
+import { findNextWidgetPosition } from './utils/canvasNavigation';
 
 interface AppStore extends AgentState {
   actionQueue: AgentAction[];
@@ -696,22 +697,64 @@ export const useStore = create<AppStore>((set, get) => ({
   togglePeriodicTable: () => set((state) => ({ isPeriodicTableOpen: !state.isPeriodicTableOpen })),
   
   isAttendanceOpen: false,
-  toggleAttendance: () => set((state) => ({ isAttendanceOpen: !state.isAttendanceOpen })),
+  toggleAttendance: () => {
+    const existing = Object.values(get().domElements).find(
+      (el) => el.componentType === 'ATTENDANCE' || el.componentType === 'PRESENSI'
+    );
+    if (existing) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('focusCanvasPlaceholder', {
+            detail: { x: existing.x, y: existing.y, width: existing.width, height: existing.height }
+          })
+        );
+      }
+      return;
+    }
+    const width = 380;
+    const height = 490;
+    const { x, y } = findNextWidgetPosition({ width, height });
+    const id = `attendance_${Date.now()}`;
+    get().updateDomElement(id, {
+      id,
+      html: '<div>Attendance</div>',
+      componentType: 'ATTENDANCE',
+      config: { title: 'Class attendance' },
+      x,
+      y,
+      width,
+      height,
+      scaleX: 1,
+      scaleY: 1,
+      rotation: 0,
+      zIndex: 10
+    });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('addCanvasPlaceholder', {
+          detail: { id, x, y, width, height, autofocus: true }
+        })
+      );
+    }
+  },
   
   isTodoListOpen: false,
   toggleTodoList: () => set((state) => ({ isTodoListOpen: !state.isTodoListOpen })),
   
   toggleSpinWheel: () => {
+    const width = 440;
+    const height = 480;
+    const { x, y } = findNextWidgetPosition({ width, height });
     const id = `wheel_${Date.now()}`;
     get().updateDomElement(id, {
       id,
       html: '<div>Wheel</div>',
       componentType: 'SPIN_WHEEL',
       config: { title: 'Random Student Wheel' },
-      x: 960,
-      y: 540,
-      width: 440,
-      height: 480,
+      x,
+      y,
+      width,
+      height,
       scaleX: 1,
       scaleY: 1,
       rotation: 0,
@@ -719,22 +762,25 @@ export const useStore = create<AppStore>((set, get) => ({
     });
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('addCanvasPlaceholder', {
-        detail: { id, x: 960, y: 540, width: 440, height: 480, autofocus: true }
+        detail: { id, x, y, width, height, autofocus: true }
       }));
     }
   },
 
   toggleScoreboard: () => {
+    const width = 420;
+    const height = 380;
+    const { x, y } = findNextWidgetPosition({ width, height });
     const id = `score_${Date.now()}`;
     get().updateDomElement(id, {
       id,
       html: '<div>Score</div>',
       componentType: 'SCOREBOARD',
       config: { title: 'Group Scoreboard' },
-      x: 960,
-      y: 540,
-      width: 420,
-      height: 380,
+      x,
+      y,
+      width,
+      height,
       scaleX: 1,
       scaleY: 1,
       rotation: 0,
@@ -742,22 +788,25 @@ export const useStore = create<AppStore>((set, get) => ({
     });
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('addCanvasPlaceholder', {
-        detail: { id, x: 960, y: 540, width: 420, height: 380, autofocus: true }
+        detail: { id, x, y, width, height, autofocus: true }
       }));
     }
   },
 
   toggleMathGraph: () => {
+    const width = 460;
+    const height = 440;
+    const { x, y } = findNextWidgetPosition({ width, height });
     const id = `math_${Date.now()}`;
     get().updateDomElement(id, {
       id,
       html: '<div>Grafik</div>',
       componentType: 'MATH_GRAPH',
       config: { title: 'Grafik Matematika Interaktif', type: 'QUADRATIC', a: 1, b: -2, c: -3 },
-      x: 960,
-      y: 540,
-      width: 460,
-      height: 440,
+      x,
+      y,
+      width,
+      height,
       scaleX: 1,
       scaleY: 1,
       rotation: 0,
@@ -765,7 +814,7 @@ export const useStore = create<AppStore>((set, get) => ({
     });
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('addCanvasPlaceholder', {
-        detail: { id, x: 960, y: 540, width: 460, height: 440, autofocus: true }
+        detail: { id, x, y, width, height, autofocus: true }
       }));
     }
   },

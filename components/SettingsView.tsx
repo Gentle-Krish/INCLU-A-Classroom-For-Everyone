@@ -31,6 +31,7 @@ function visibleOllamaName(id: string): string {
 }
 
 interface SettingsViewProps {
+  isOpen?: boolean;
   onClose: () => void;
 }
 
@@ -56,7 +57,7 @@ const Field: React.FC<{ label: string; hint?: string; children: React.ReactNode 
 
 const inputCls = "w-full bg-[#F6F0E8] border border-[#E7DDD2] rounded-xl py-2.5 px-3.5 text-sm font-semibold text-[#3F2A1D] placeholder:text-[#A08B7A] focus:outline-none focus:border-[#F4B183] focus:ring-4 focus:ring-[#F4B183]/40 transition-all";
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ onClose }) => {
+export const SettingsView: React.FC<SettingsViewProps> = ({ isOpen = true, onClose }) => {
   const { t } = useTranslation();
   const {
     aiPreference, setAiPreference,
@@ -216,6 +217,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose }) => {
     setOllamaGate(liveAiStatus.ollamaStatus?.online ? 'up' : 'down');
   }, [liveAiStatus.checkedAt, liveAiStatus.ollamaStatus?.online]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   const handleSave = () => {
     setGeminiApiKey(localKey);
     setOllamaBaseUrl(localOllamaUrl);
@@ -264,73 +276,87 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose }) => {
   ];
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.99 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 20, scale: 0.99 }}
-      transition={{ type: 'spring', damping: 25, stiffness: 220 }}
-      className="absolute inset-0 z-40 bg-[#F6F0E8] flex flex-col overflow-hidden font-sans"
-    >
-      {/* Header */}
-      <div className="h-20 lg:h-22 px-6 lg:px-12 flex justify-between items-center bg-[#FFF6EE] border-b border-[#E7DDD2] shrink-0">
-        <div>
-          <h2 className="text-xl lg:text-2xl font-black text-[#3F2A1D] tracking-tight">{t('settingsTitle', 'Settings')}</h2>
-          <p className="text-xs lg:text-sm font-semibold text-[#A08B7A] mt-0.5">{t('settingsSubtitle', 'Configure AI, class tools, and board preferences')}</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <motion.button
-            whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-            onClick={handleSave}
-            className="flex items-center gap-2 px-5 py-2.5 bg-[#6B4423] text-white rounded-xl font-bold text-sm shadow-md shadow-[#6B4423]/20 hover:bg-[#3F2A1D] transition-colors cursor-pointer"
-          >
-            <AnimatePresence mode="wait">
-              {saved ? (
-                <motion.span key="saved" initial={{ scale: 0 }} animate={{ scale: 1 }} className="flex items-center gap-2">
-                  <CheckCircle2 size={16} /> {t('saved', 'Saved')}
-                </motion.span>
-              ) : (
-                <motion.span key="save" className="flex items-center gap-2">
-                  <Save size={16} /> {t('save', 'Save')}
-                </motion.span>
-              )}
-            </AnimatePresence>
-          </motion.button>
-          <button
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-6 bg-[#3f2a1d]/30 backdrop-blur-xs font-sans">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             onClick={onClose}
-            className="w-10 h-10 flex items-center justify-center rounded-xl bg-[#F6F0E8] text-[#6B4423] hover:bg-[#E7DDD2] transition-colors cursor-pointer"
+            className="fixed inset-0"
+          />
+          <motion.div
+            role="dialog"
+            aria-labelledby="settings-dialog-title"
+            initial={{ opacity: 0, scale: 0.96, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: 16 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className="relative flex w-full max-w-3xl max-h-[88vh] flex-col overflow-hidden rounded-[32px] border border-[#E7DDD2] bg-[#F6F0E8] shadow-2xl z-[101]"
           >
-            <X size={18} />
-          </button>
-        </div>
-      </div>
+            {/* Header */}
+            <div className="px-6 py-4 sm:px-7 sm:py-5 flex justify-between items-center bg-[#FFF6EE] border-b border-[#E7DDD2] shrink-0">
+              <div>
+                <h2 id="settings-dialog-title" className="text-xl sm:text-2xl font-black text-[#3F2A1D] tracking-tight">{t('settingsTitle', 'Settings')}</h2>
+                <p className="text-xs sm:text-sm font-semibold text-[#A08B7A] mt-0.5">{t('settingsSubtitle', 'Configure AI, class tools, and board preferences')}</p>
+              </div>
+              <div className="flex items-center gap-2 sm:gap-3">
+                <motion.button
+                  whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                  onClick={handleSave}
+                  className="flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 bg-[#6B4423] text-white rounded-xl font-bold text-xs sm:text-sm shadow-md shadow-[#6B4423]/20 hover:bg-[#3F2A1D] transition-colors cursor-pointer"
+                >
+                  <AnimatePresence mode="wait">
+                    {saved ? (
+                      <motion.span key="saved" initial={{ scale: 0 }} animate={{ scale: 1 }} className="flex items-center gap-2">
+                        <CheckCircle2 size={16} /> {t('saved', 'Saved')}
+                      </motion.span>
+                    ) : (
+                      <motion.span key="save" className="flex items-center gap-2">
+                        <Save size={16} /> {t('save', 'Save')}
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                </motion.button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="w-10 h-10 flex items-center justify-center rounded-xl bg-[#F6F0E8] text-[#6B4423] hover:bg-[#E7DDD2] transition-colors cursor-pointer border border-[#E7DDD2]"
+                  title="Close"
+                >
+                  <X size={18} strokeWidth={2.4} />
+                </button>
+              </div>
+            </div>
 
-      {/* Modern Horizontal Navigation Tabs */}
-      <div className="bg-[#FFF6EE] border-b border-[#E7DDD2] px-6 lg:px-12 shrink-0">
-        <div className="flex items-center gap-2 overflow-x-auto py-2.5 custom-scrollbar">
-          {TABS.map(tab => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-                  isActive
-                    ? 'bg-[#6B4423] text-white shadow-sm shadow-[#6B4423]/20'
-                    : 'text-[#6B4423] hover:bg-[#F6F0E8] hover:text-[#3F2A1D]'
-                }`}
-              >
-                <Icon size={15} />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+            {/* Modern Horizontal Navigation Tabs */}
+            <div className="bg-[#FFF6EE] border-b border-[#E7DDD2] px-6 sm:px-7 shrink-0">
+              <div className="flex items-center gap-2 overflow-x-auto py-2.5 custom-scrollbar">
+                {TABS.map(tab => {
+                  const Icon = tab.icon;
+                  const isActive = activeTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                        isActive
+                          ? 'bg-[#6B4423] text-white shadow-sm shadow-[#6B4423]/20'
+                          : 'text-[#6B4423] hover:bg-[#F6F0E8] hover:text-[#3F2A1D]'
+                      }`}
+                    >
+                      <Icon size={15} />
+                      <span>{tab.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
-      {/* Scrollable Content */}
-      <div className="flex-1 overflow-y-auto p-6 lg:p-10 custom-scrollbar">
-        <div className="max-w-3xl mx-auto space-y-6">
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto p-5 sm:p-7 custom-scrollbar">
+              <div className="space-y-6">
 
           {/* ════════ TAB 1: KECERDASAN AI ════════ */}
           {activeTab === 'ai' && (
@@ -450,12 +476,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose }) => {
                         onChange={e => setLocalOllamaModel(e.target.value)}
                         className={inputCls}
                       >
-                        <optgroup label="Recommended Inclu models">
-                          <option value={CHALK_LOCAL_DOWNLOAD_MODEL}>Inclu local model</option>
+                        <optgroup label="Fast Text Models (Offline)">
+                          <option value={CHALK_LOCAL_DOWNLOAD_MODEL}>Inclu local model (inclu-gemma:2b)</option>
                         </optgroup>
-                        {detectedOllamaModels.some(m => !/Chalk/i.test(m) && m !== 'chalk-model:latest' && m !== CHALK_LOCAL_DOWNLOAD_MODEL && m.toLowerCase() !== CHALK_LOCAL_BASE_MODEL) && (
+                        <optgroup label="Vision & Whiteboard OCR Models (Offline Eyes)">
+                          <option value="moondream">Moondream 2 (~1.8B - Ultra-fast Vision)</option>
+                          <option value="llava:7b">LLaVA 7B (~7B - High Accuracy OCR & Vision)</option>
+                        </optgroup>
+                        {detectedOllamaModels.some(m => !/Chalk/i.test(m) && m !== 'chalk-model:latest' && m !== CHALK_LOCAL_DOWNLOAD_MODEL && m.toLowerCase() !== CHALK_LOCAL_BASE_MODEL && m !== 'moondream' && m !== 'llava:7b' && !m.startsWith('moondream:') && !m.startsWith('llava:')) && (
                           <optgroup label="Other models found on this laptop">
-                            {detectedOllamaModels.filter(m => !/Chalk/i.test(m) && m !== 'chalk-model:latest' && m !== CHALK_LOCAL_DOWNLOAD_MODEL && m.toLowerCase() !== CHALK_LOCAL_BASE_MODEL).map(m => (
+                            {detectedOllamaModels.filter(m => !/Chalk/i.test(m) && m !== 'chalk-model:latest' && m !== CHALK_LOCAL_DOWNLOAD_MODEL && m.toLowerCase() !== CHALK_LOCAL_BASE_MODEL && m !== 'moondream' && m !== 'llava:7b' && !m.startsWith('moondream:') && !m.startsWith('llava:')).map(m => (
                               <option key={m} value={m}>{/gemma/i.test(m) ? 'Inclu local model' : `${m} (installed locally)`}</option>
                             ))}
                           </optgroup>
@@ -465,7 +495,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose }) => {
 
                     {localOllamaModel !== CHALK_LOCAL_DOWNLOAD_MODEL && !isModelInstalled && (
                       <p className="text-[11px] font-semibold text-[#6B4423]">
-                        Inclu downloads only its local model. Other names in this list are not downloaded from here.
+                        To use {localOllamaModel} offline, run: <code className="bg-[#E7DDD2] px-1.5 py-0.5 rounded text-[10px] font-mono select-all">ollama run {localOllamaModel}</code>
                       </p>
                     )}
 
@@ -1027,8 +1057,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose }) => {
             </motion.div>
           )}
 
+              </div>
+            </div>
+          </motion.div>
         </div>
-      </div>
-    </motion.div>
+      )}
+    </AnimatePresence>
   );
 };

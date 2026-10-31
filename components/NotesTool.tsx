@@ -3,6 +3,7 @@ import { Save, Trash2, List, Bold, Italic } from 'lucide-react';
 import { useTranslation } from '../utils/translations';
 import { useStore } from '../store';
 import { toast } from '../utils/toast';
+import { findNextWidgetPosition } from '../utils/canvasNavigation';
 
 const NOTES_STORAGE_KEY = 'chalk_quick_notes';
 
@@ -25,23 +26,26 @@ export const NotesTool: React.FC = () => {
 
   const handlePinToBoard = () => {
     if (!note.trim()) return;
+    const width = 440;
+    const height = 360;
+    const { x, y } = findNextWidgetPosition({ width, height });
     const id = `note_${Date.now()}`;
     useStore.getState().updateDomElement(id, {
       id,
       html: '<div>Notes</div>',
       componentType: 'MARKDOWN_NOTE',
       config: { title: 'Teacher notes', markdown: note },
-      x: 960,
-      y: 540,
-      width: 440,
-      height: 360,
+      x,
+      y,
+      width,
+      height,
       scaleX: 1,
       scaleY: 1,
       rotation: 0,
       zIndex: 12
     });
     window.dispatchEvent(new CustomEvent('addCanvasPlaceholder', {
-      detail: { id, x: 960, y: 540, width: 440, height: 360 }
+      detail: { id, x, y, width, height, autofocus: true }
     }));
     toast.success('Note pinned to the whiteboard.');
   };

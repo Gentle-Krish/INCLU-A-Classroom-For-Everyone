@@ -99,18 +99,6 @@ export const ToolOverlay: React.FC = () => {
       </FloatingToolContainer>
 
       <FloatingToolContainer 
-        title="Attendance Tracker" 
-        isOpen={isAttendanceOpen} 
-        onClose={toggleAttendance} 
-        icon={Users}
-        defaultPosition={{ x: 250, y: 100 }}
-        width={360}
-        height={460}
-      >
-        <AttendanceTool />
-      </FloatingToolContainer>
-
-      <FloatingToolContainer 
         title="To-Do List" 
         isOpen={isTodoListOpen} 
         onClose={toggleTodoList} 

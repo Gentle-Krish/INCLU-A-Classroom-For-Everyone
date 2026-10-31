@@ -3,7 +3,14 @@ import { io, Socket } from 'socket.io-client';
 import { useStore } from '../store';
 import { CONFIG } from '../constants';
 import { CanvasJson, ClassRosterEntry, ClientToServerEvents, PublicQuestList, QuestDraft, QuestScoreBoard, QuestTally, ServerToClientEvents, StudentAsk } from '../types';
-import { rememberClassNumber } from '../utils/classRoom';
+import {
+  RoomSession,
+  getSavedRooms,
+  createRoomSession,
+  saveRoomSession,
+  removeRoomSession,
+  rememberClassNumber,
+} from '../utils/classRoom';
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('socket-sync');
@@ -12,11 +19,18 @@ type BoardSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 export const useSocketSync = (canvasRef: React.RefObject<any>) => {
   const [roomId, setRoomId] = useState<string>('');
+  const [savedRooms, setSavedRooms] = useState<RoomSession[]>(() => {
+    if (typeof window !== 'undefined') {
+      return getSavedRooms(window.localStorage);
+    }
+    return [];
+  });
   const [isViewer, setIsViewer] = useState(false);
   const socketRef = useRef<BoardSocket | null>(null);
 
   const initialDataRef = useRef<CanvasJson | null>(null);
   const isViewerRef = useRef(false);
+  const isRoomSwitchRef = useRef(false);
 
   useEffect(() => {
     if (!isViewerRef.current) return;
@@ -110,7 +124,8 @@ export const useSocketSync = (canvasRef: React.RefObject<any>) => {
     });
 
     socket.on('canvas-init', (data) => {
-      if (isCurrentlyViewer && data) {
+      if ((isCurrentlyViewer || isRoomSwitchRef.current) && data) {
+         isRoomSwitchRef.current = false;
          if (canvasRef.current) {
              try {
                canvasRef.current.loadFromJSON(data, () => {
@@ -382,12 +397,22 @@ export const useSocketSync = (canvasRef: React.RefObject<any>) => {
     socket.emit('close-quest', { roomId: room });
   }, [roomId]);
 
-  const changeRoomId = useCallback((newId: string) => {
-    const formatted = newId.trim();
+  const switchRoom = useCallback((targetRoomId: string) => {
+    const formatted = targetRoomId.trim();
     if (!/^\d{4}$/.test(formatted)) return;
     try {
       window.localStorage.setItem('chalk_class_number', formatted);
+      const existing = getSavedRooms(window.localStorage).find((r) => r.id === formatted);
+      saveRoomSession(window.localStorage, {
+        id: formatted,
+        name: existing?.name || `Classroom ${formatted}`,
+        createdAt: existing?.createdAt || Date.now(),
+        lastActiveAt: Date.now(),
+      });
+      setSavedRooms(getSavedRooms(window.localStorage));
     } catch {}
+
+    isRoomSwitchRef.current = true;
     setRoomId(formatted);
     const socket = socketRef.current;
     if (socket?.connected) {
@@ -395,5 +420,46 @@ export const useSocketSync = (canvasRef: React.RefObject<any>) => {
     }
   }, []);
 
-  return { roomId, isViewer, startClass, openQuest, closeQuest, changeRoomId };
+  const createRoom = useCallback((name?: string) => {
+    try {
+      const { newRoom, allRooms } = createRoomSession(window.localStorage, name);
+      setSavedRooms(allRooms);
+      isRoomSwitchRef.current = true;
+      setRoomId(newRoom.id);
+      const socket = socketRef.current;
+      if (socket?.connected) {
+        socket.emit('join-room', newRoom.id);
+      }
+      return newRoom.id;
+    } catch {
+      return '';
+    }
+  }, []);
+
+  const deleteRoom = useCallback((targetRoomId: string) => {
+    try {
+      const remaining = removeRoomSession(window.localStorage, targetRoomId);
+      setSavedRooms(remaining);
+      if (roomId === targetRoomId && remaining.length > 0) {
+        switchRoom(remaining[0].id);
+      }
+    } catch {}
+  }, [roomId, switchRoom]);
+
+  const changeRoomId = useCallback((newId: string) => {
+    switchRoom(newId);
+  }, [switchRoom]);
+
+  return {
+    roomId,
+    savedRooms,
+    isViewer,
+    startClass,
+    openQuest,
+    closeQuest,
+    changeRoomId,
+    switchRoom,
+    createRoom,
+    deleteRoom,
+  };
 };

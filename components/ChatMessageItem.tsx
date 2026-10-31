@@ -9,6 +9,7 @@ import { toast } from '../utils/toast';
 import { submitLogFeedback } from '../services/aiService';
 import { useStore } from '../store';
 import { useTranslation } from '../utils/translations';
+import { findNextWidgetPosition } from '../utils/canvasNavigation';
 import gsap from 'gsap';
 
 interface ChatMessageItemProps {
@@ -130,10 +131,9 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
 
   const handlePinToBoard = () => {
     try {
-      const zoom = useStore.getState().zoom || 1;
-      const vpt = useStore.getState().viewportTransform || [1, 0, 0, 1, 0, 0];
-      const centerX = Math.round((-vpt[4] + (typeof window !== 'undefined' ? window.innerWidth / 2 : 960)) / zoom);
-      const centerY = Math.round((-vpt[5] + (typeof window !== 'undefined' ? window.innerHeight / 2 : 540)) / zoom);
+      const width = 520;
+      const height = 420;
+      const { x: posX, y: posY } = findNextWidgetPosition({ width, height });
 
       const id = `ai_note_${Date.now()}`;
       const titleSnippet = fullText.slice(0, 32).replace(/[#*`_~]/g, '').trim();
@@ -147,17 +147,17 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
           markdown: fullText,
           model: displayModel
         },
-        x: centerX,
-        y: centerY,
-        width: 520,
-        height: 420,
+        x: posX,
+        y: posY,
+        width,
+        height,
         scaleX: 1,
         scaleY: 1,
         rotation: 0,
         zIndex: 20
       });
 
-      const event = new CustomEvent('addCanvasPlaceholder', { detail: { id, x: centerX, y: centerY, width: 520, height: 420, autofocus: true } });
+      const event = new CustomEvent('addCanvasPlaceholder', { detail: { id, x: posX, y: posY, width, height, autofocus: true } });
       window.dispatchEvent(event);
 
       toast.success('📌 AI reply pinned to the whiteboard.');

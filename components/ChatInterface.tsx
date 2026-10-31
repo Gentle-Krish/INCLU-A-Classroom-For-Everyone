@@ -807,7 +807,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ canvasRef }) => {
 
   if (isViewerUrl) {
     return (
-      <div className="pointer-events-none absolute inset-0 z-30 overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden">
         <div className="absolute bottom-4 lg:bottom-6 left-1/2 -translate-x-1/2 pointer-events-auto z-40">
            <div className="bg-slate-900/80 backdrop-blur-md text-white text-[13px] font-medium px-4 py-2.5 rounded-2xl shadow-lg border border-white/10 flex items-center gap-3">
              <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
@@ -819,7 +819,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ canvasRef }) => {
   }
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-30 overflow-hidden">
+    <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden">
 
       {/* Left Drawing Toolbar */}
       <DrawingToolbar
@@ -831,7 +831,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ canvasRef }) => {
       <input id="canvas-upload" type="file" className="hidden" accept="image/*" onChange={handleCanvasImageUpload} />
 
       {/* Top Right Zoom Controls */}
-      <div className="absolute top-4 lg:top-5 right-4 lg:right-6 pointer-events-auto z-20">
+      <div className="absolute top-4 lg:top-5 right-4 lg:right-6 pointer-events-auto z-10">
         <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FBF6F0]/95 backdrop-blur-xl rounded-full shadow-lg border border-[#E7DDD2]">
           <button
             onClick={() => handleZoom('out')}
