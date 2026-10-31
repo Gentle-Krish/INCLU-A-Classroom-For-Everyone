@@ -23,7 +23,7 @@ import { AutofocusReticle } from './AutofocusReticle';
 import {
   Printer, Maximize2, Minimize2, X, Download, FileText, Globe,
   Code, Compass, BookOpen, Clock, Calculator, HelpCircle, Layers, Sparkles, Users, SquareCheckBig,
-  Image as ImageIcon, Copy, GripVertical
+  Image as ImageIcon, Copy, GripVertical, Trash2
 } from 'lucide-react';
 import {
   triggerPrintComponent,
@@ -45,6 +45,8 @@ export const DomOverlay: React.FC = () => {
   const isActing = useStore(state => state.isActing);
   const isHandMode = useStore(state => state.activeTool === 'HAND');
   const removeDomElement = useStore(state => state.removeDomElement);
+  const selectedWidgetId = useStore(state => state.selectedWidgetId);
+  const setSelectedWidgetId = useStore(state => state.setSelectedWidgetId);
 
   const [fullscreenWidgetId, setFullscreenWidgetId] = useState<string | null>(null);
   const [draggingWidget, setDraggingWidget] = useState<{ id: string; startMouseX: number; startMouseY: number; startElX: number; startElY: number } | null>(null);
@@ -168,13 +170,17 @@ export const DomOverlay: React.FC = () => {
       .replace(/(href|src|xlink:href)\s*=\s*(?:"\s*javascript:[^"]*"|'\s*javascript:[^']*')/gi, '$1="#"');
   };
 
-  const handleDelete = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
+  const handleDelete = (id: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
     if (fullscreenWidgetId === id) setFullscreenWidgetId(null);
+    if (selectedWidgetId === id) setSelectedWidgetId(null);
     removeDomElement(id);
     const event = new CustomEvent('removeCanvasObject', { detail: { id } });
     window.dispatchEvent(event);
+    toast.success('Widget removed from whiteboard.');
   };
 
   const handlePrint = (el: DomElementState, e: React.MouseEvent) => {
@@ -389,17 +395,31 @@ export const DomOverlay: React.FC = () => {
 
           const isDragging = draggingWidget?.id === el.id;
           const isResizing = resizingWidget?.id === el.id;
+          const isSelected = selectedWidgetId === el.id;
 
           return (
             <div
               key={el.id}
               inert={isHandMode}
+              onPointerDown={() => {
+                setSelectedWidgetId(el.id);
+                const canvas = (window as any).__fabricCanvas;
+                if (canvas && typeof canvas.getObjects === 'function') {
+                  const ph = canvas.getObjects().find((o: any) => o.id === el.id);
+                  if (ph) {
+                    canvas.setActiveObject(ph);
+                    canvas.requestRenderAll();
+                  }
+                }
+              }}
               className={`absolute flex flex-col overflow-hidden rounded-[2rem] bg-[#FFF6EE] border-2 will-change-transform select-none ${
                 isActing ? 'opacity-50' : 'opacity-100'
               } ${
-                isDragging
+                isSelected
+                  ? 'ring-3 ring-[#6B4423]/70 border-[#6B4423] shadow-[0_22px_70px_rgba(63,42,29,0.22)] scale-[1.008] z-30'
+                  : isDragging
                   ? 'shadow-[0_24px_70px_rgba(63,42,29,0.16)] border-[#6B4423] scale-[1.018] z-40 ring-4 ring-[#6B4423]/15'
-                  : 'shadow-[0_12px_45px_rgba(10,26,58,0.10)] border-[#E7DDD2] hover:border-[#E7DDD2]'
+                  : 'shadow-[0_12px_45px_rgba(10,26,58,0.10)] border-[#E7DDD2] hover:border-[#C4B2A3]'
               }`}
               style={{
                 width: `${el.width}px`,
@@ -415,7 +435,10 @@ export const DomOverlay: React.FC = () => {
             >
               {/* Desktop Header / PC Window Titlebar with Generous Drag Area */}
               <div
-                onMouseDown={(e) => handleTitlebarMouseDown(el, e)}
+                onMouseDown={(e) => {
+                  setSelectedWidgetId(el.id);
+                  handleTitlebarMouseDown(el, e);
+                }}
                 onDoubleClick={() => setFullscreenWidgetId(el.id)}
                 className={`flex h-12 w-full items-center justify-between px-3.5 border-b border-[#E7DDD2] shrink-0 select-none transition-colors cursor-grab active:cursor-grabbing ${
                   isDragging ? 'bg-[#6B4423]/10' : 'bg-[#F6F0E8] hover:bg-[#F4B183]/25/90'
@@ -446,11 +469,22 @@ export const DomOverlay: React.FC = () => {
                     <Maximize2 size={14} />
                   </button>
 
-                  {/* Sole Close / Delete Button */}
+                  {/* Delete Button */}
+                  <button
+                    onClick={(e) => handleDelete(el.id, e)}
+                    className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-rose-100 text-[#A08B7A] hover:text-rose-600 transition cursor-pointer"
+                    title="Delete widget from whiteboard"
+                    aria-label="Delete widget"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+
+                  {/* Close Button */}
                   <button
                     onClick={(e) => handleDelete(el.id, e)}
                     className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-rose-50 text-[#A08B7A] hover:text-rose-600 transition cursor-pointer"
                     title="Close"
+                    aria-label="Close"
                   >
                     <X size={15} strokeWidth={2.5} />
                   </button>
@@ -550,6 +584,14 @@ export const DomOverlay: React.FC = () => {
                   title="Download standalone file"
                 >
                   <Download size={14} /> Download file
+                </button>
+
+                <button
+                  onClick={(e) => handleDelete(activeFullscreenEl.id, e)}
+                  className="px-3.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-xs font-bold text-rose-600 flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                  title="Delete widget from whiteboard"
+                >
+                  <Trash2 size={14} /> Delete
                 </button>
 
                 <button

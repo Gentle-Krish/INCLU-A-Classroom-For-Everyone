@@ -26,16 +26,16 @@ export function penFontSize(text: string, pageWidth: number, pageHeight: number)
   const letters = Math.max(1, text.trim().length);
   const innerW = Math.max(240, pageWidth - 96);
   const innerH = Math.max(180, pageHeight - 96);
-  let size = 96;
+  let size = 52;
   for (let i = 0; i < 16; i++) {
     const perLine = Math.max(8, innerW / (size * 0.52));
     const lines = Math.ceil(letters / perLine);
     const height = lines * size * 1.45;
-    if (height > innerH * 0.96) size *= 0.9;
-    else if (height < innerH * 0.88) size *= 1.08;
+    if (height > innerH * 0.94) size *= 0.9;
+    else if (height < innerH * 0.82) size *= 1.08;
     else break;
   }
-  return Math.round(Math.max(32, Math.min(96, size)));
+  return Math.round(Math.max(26, Math.min(48, size)));
 }
 
 /** The equation in the sentence, without dollar signs. Null when none was given. */

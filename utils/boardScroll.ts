@@ -1,3 +1,5 @@
+import { findNextWidgetPosition } from './canvasNavigation';
+
 export function scrollBoardPage(page: HTMLElement, deltaY: number, deltaX = 0): void {
   const frame = page.querySelector('iframe');
   if (frame instanceof HTMLIFrameElement && frame.contentWindow) {
@@ -40,14 +42,18 @@ export function visiblePageFrame(canvas: {
   const zoom = vpt[0] || 1;
   const viewW = (canvas?.getWidth?.() || canvas?.width || 1280) / zoom;
   const viewH = (canvas?.getHeight?.() || canvas?.height || 800) / zoom;
-  const margin = 28;
-  const width = Math.max(520, Math.round(viewW - margin * 2));
-  const height = Math.max(360, Math.round(viewH - margin * 2));
-  const left = -(vpt[4] || 0) / zoom;
-  const top = -(vpt[5] || 0) / zoom;
+
+  // A comfortable, beautifully proportioned definition/lesson card (width ~820, height ~520)
+  // instead of stretching full-screen across the entire monitor
+  const width = Math.min(840, Math.max(600, Math.round(viewW * 0.62)));
+  const height = Math.min(540, Math.max(420, Math.round(viewH * 0.62)));
+
+  // Place non-overlapping: if widgets already exist, places neatly to the right
+  const pos = findNextWidgetPosition({ width, height });
+
   return {
-    x: Math.round(left + viewW / 2),
-    y: Math.round(top + viewH / 2),
+    x: pos.x,
+    y: pos.y,
     width,
     height,
   };

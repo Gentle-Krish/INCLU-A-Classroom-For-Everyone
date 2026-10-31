@@ -536,13 +536,22 @@ aiRouter.get("/status", async (req, res) => {
 });
 
 aiRouter.post("/status", async (req, res) => {
-  const { aiPreference, geminiApiKey, ollamaBaseUrl, selectedOllamaModel, selectedVertexModel, selectedGeminiModel } = req.body;
-  const status = await getAvailableMode(geminiApiKey, ollamaBaseUrl, selectedOllamaModel);
+  const { aiPreference, geminiApiKey, ollamaBaseUrl, selectedOllamaModel, selectedVisionModel, selectedVertexModel, selectedGeminiModel } = req.body;
+  const status: any = await getAvailableMode(geminiApiKey, ollamaBaseUrl, selectedOllamaModel);
 
   // Strictly honor explicit user preference if the preferred backend is available
   if (aiPreference === 'ollama' || (aiPreference !== 'gemini' && aiPreference !== 'vertex' && status.ollamaStatus?.online && status.ollamaStatus?.hasModel)) {
     status.mode = 'ollama';
-    status.model = localModelName(selectedOllamaModel, status.ollamaStatus?.models || [], CHALK_LOCAL_DOWNLOAD_MODEL);
+    const primary = localModelName(selectedOllamaModel, status.ollamaStatus?.models || [], CHALK_LOCAL_DOWNLOAD_MODEL);
+    const vision = (selectedVisionModel && selectedVisionModel !== 'none') ? selectedVisionModel : (status.ollamaStatus?.models?.find((m: string) => /moondream|llava/i.test(m)) || null);
+    if (vision && vision !== 'none') {
+      status.visionModel = vision;
+      status.dualModel = true;
+      status.model = `${primary} + ${vision}`;
+    } else {
+      status.model = primary;
+      status.dualModel = false;
+    }
     status.online = !!status.ollamaStatus?.online;
     status.reason = status.ollamaStatus?.online ? 'ok' : 'local_unavailable';
   } else if (aiPreference === 'vertex' && status.vertexStatus?.online) {
@@ -718,7 +727,7 @@ export const matchFastInteractiveCommand = (prompt?: string): { textResponse: st
 
 aiRouter.post("/generate", async (req, res) => {
   const startTime = Date.now();
-  const { prompt, canvasImageBase64, canvasObjects, viewport, highResInputImage, history, pageContext, domElements, aiPreference, geminiApiKey, ollamaBaseUrl, selectedGeminiModel, selectedOllamaModel, selectedVertexModel, intent, forceTools, lessonContext, sessionId } = req.body;
+  const { prompt, canvasImageBase64, canvasObjects, viewport, highResInputImage, history, pageContext, domElements, aiPreference, geminiApiKey, ollamaBaseUrl, selectedGeminiModel, selectedOllamaModel, selectedVisionModel, selectedVertexModel, intent, forceTools, lessonContext, sessionId } = req.body;
   const activeSessionId = sessionId || (req.headers['x-session-id'] as string) || 'session_default';
   let activeMode: 'vertex' | 'gemini' | 'ollama' | 'unknown' = 'unknown';
   let activeModel = 'unknown';
@@ -807,7 +816,7 @@ aiRouter.post("/generate", async (req, res) => {
           } else if (mode === 'ollama') {
             activeModel = localModelName(selectedOllamaModel, status.ollamaStatus?.models || [], CHALK_LOCAL_DOWNLOAD_MODEL);
             result = await generateAgentActionsOllama(
-              prompt, canvasImageBase64, canvasObjects, viewport, highResInputImage, history, pageContext, domElements, ollamaBaseUrl, intent, forceTools, lessonContext, activeModel
+              prompt, canvasImageBase64, canvasObjects, viewport, highResInputImage, history, pageContext, domElements, ollamaBaseUrl, intent, forceTools, lessonContext, activeModel, selectedVisionModel
             );
           }
           modeSuccess = true;

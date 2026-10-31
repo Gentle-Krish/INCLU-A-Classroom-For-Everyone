@@ -506,7 +506,7 @@ async function startServer() {
     });
 
     // Receive viewport updates
-    socket.on("canvas-request", () => {
+    (socket as any).on("canvas-request", () => {
       const roomId = socket.data.roomId;
       if (!roomId) return;
       const room = rooms.get(roomId);

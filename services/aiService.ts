@@ -143,7 +143,7 @@ export const generateAgentActions = async (
   },
   signal?: AbortSignal
 ) => {
-  const { aiPreference, geminiApiKey, ollamaBaseUrl, selectedGeminiModel, selectedOllamaModel, selectedVertexModel } = useStore.getState() as any;
+  const { aiPreference, geminiApiKey, ollamaBaseUrl, selectedGeminiModel, selectedOllamaModel, selectedVisionModel, selectedVertexModel } = useStore.getState() as any;
   const apiUrl = (import.meta as any).env.VITE_API_URL || '';
   return requestJson<any>(`${apiUrl}/api/ai/generate`, {
     method: 'POST',
@@ -163,6 +163,7 @@ export const generateAgentActions = async (
       ollamaBaseUrl,
       selectedGeminiModel,
       selectedOllamaModel,
+      selectedVisionModel,
       selectedVertexModel,
       intent,
       forceTools,

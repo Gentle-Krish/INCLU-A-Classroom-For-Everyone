@@ -61,6 +61,10 @@ interface AppStore extends AgentState {
   setHandsFreeListening: (active: boolean) => void;
   lastVoiceCommand: string | null;
   setLastVoiceCommand: (cmd: string | null) => void;
+  isVoiceCommandActive: boolean;
+  setVoiceCommandActive: (active: boolean) => void;
+  voiceInterimCaption: string;
+  setVoiceInterimCaption: (caption: string) => void;
   
   isBoardSettingsOpen: boolean;
   toggleBoardSettings: () => void;
@@ -101,6 +105,8 @@ interface AppStore extends AgentState {
 
   selectedOllamaModel: string;
   setSelectedOllamaModel: (model: string) => void;
+  selectedVisionModel: string;
+  setSelectedVisionModel: (model: string) => void;
 
   selectedVertexModel: string;
   setSelectedVertexModel: (model: string) => void;
@@ -188,6 +194,8 @@ interface AppStore extends AgentState {
   setAutofocusTarget: (target: { left: number; top: number; width: number; height: number; timestamp: number } | null) => void;
   
   // DOM Element Management
+  selectedWidgetId: string | null;
+  setSelectedWidgetId: (id: string | null) => void;
   updateDomElement: (id: string, state: Partial<DomElementState>) => void;
   removeDomElement: (id: string) => void;
   setDomElements: (elements: Record<string, DomElementState>) => void;
@@ -259,6 +267,12 @@ const getInitialSelectedOllamaModel = (): string => {
   return saved;
 };
 
+const getInitialSelectedVisionModel = (): string => {
+  if (typeof window === 'undefined') return 'moondream';
+  const saved = localStorage.getItem('selected_vision_model');
+  return saved !== null ? saved : 'moondream';
+};
+
 const getInitialSelectedVertexModel = (): string => {
   if (typeof window === 'undefined') return 'gemini-3.8-flash';
   const saved = localStorage.getItem('selected_vertex_model');
@@ -309,7 +323,7 @@ const getInitialTranscribeMode = (): TranscribeMode => {
   return 'webspeech';
 };
 
-const defaultVoiceConfig: VoiceConfig = {
+export const defaultVoiceConfig: VoiceConfig = {
   autoStopSeconds: 0, // 0 = manual continuous recording (no arbitrary 10s deadline cutoff)
   autoSubmit: true,
   noiseSuppression: true,
@@ -825,10 +839,17 @@ export const useStore = create<AppStore>((set, get) => ({
     if (typeof window !== 'undefined') localStorage.setItem('chalk_assistive_mode', String(nextVal));
     return { isAssistiveMode: nextVal };
   }),
-  isHandsFreeListening: false,
-  setHandsFreeListening: (active) => set({ isHandsFreeListening: active }),
+  isHandsFreeListening: typeof window !== 'undefined' && localStorage.getItem('chalk_hands_free_listening') === 'true',
+  setHandsFreeListening: (active) => {
+    if (typeof window !== 'undefined') localStorage.setItem('chalk_hands_free_listening', String(active));
+    set({ isHandsFreeListening: active });
+  },
   lastVoiceCommand: null,
   setLastVoiceCommand: (cmd) => set({ lastVoiceCommand: cmd }),
+  isVoiceCommandActive: false,
+  setVoiceCommandActive: (active) => set({ isVoiceCommandActive: active }),
+  voiceInterimCaption: '',
+  setVoiceInterimCaption: (caption) => set({ voiceInterimCaption: caption }),
   
   isBoardSettingsOpen: false,
   toggleBoardSettings: () => set((state) => ({ isBoardSettingsOpen: !state.isBoardSettingsOpen })),
@@ -892,6 +913,11 @@ export const useStore = create<AppStore>((set, get) => ({
   setSelectedOllamaModel: (model) => {
     localStorage.setItem('selected_ollama_model', model);
     set({ selectedOllamaModel: model });
+  },
+  selectedVisionModel: getInitialSelectedVisionModel(),
+  setSelectedVisionModel: (model) => {
+    localStorage.setItem('selected_vision_model', model);
+    set({ selectedVisionModel: model });
   },
 
   selectedVertexModel: getInitialSelectedVertexModel(),
@@ -1119,6 +1145,9 @@ export const useStore = create<AppStore>((set, get) => ({
     };
   }),
 
+  selectedWidgetId: null,
+  setSelectedWidgetId: (id) => set({ selectedWidgetId: id }),
+
   removeDomElement: (id) => set((state) => {
     const newElements = { ...state.domElements };
     delete newElements[id];
@@ -1129,7 +1158,8 @@ export const useStore = create<AppStore>((set, get) => ({
          dom: newElements
        };
     }
-    return { domElements: newElements, pages: newPages };
+    const newSelected = state.selectedWidgetId === id ? null : state.selectedWidgetId;
+    return { domElements: newElements, pages: newPages, selectedWidgetId: newSelected };
   }),
 
   setDomElements: (elements) => set({ domElements: elements }),

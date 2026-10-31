@@ -16,7 +16,8 @@ export const AssistiveDock: React.FC = () => {
     toggleAttendance,
     setViewport,
     updateDomElement,
-    isAiDrawerOpen
+    isAiDrawerOpen,
+    isVoiceCommandActive
   } = useStore();
 
   const { isAmbientActive, interimCaption, toggleAmbient } = useAmbientListener();
@@ -203,21 +204,23 @@ export const AssistiveDock: React.FC = () => {
         <button
           onClick={toggleAmbient}
           className={`relative w-14 h-14 rounded-2xl flex flex-col items-center justify-center gap-0.5 shadow-md transition cursor-pointer active:scale-90 select-none ${
-            isAmbientActive 
+            isVoiceCommandActive
+              ? 'bg-[#FFE08A] text-[#3F2A1D] ring-4 ring-amber-400 font-black animate-pulse'
+              : isAmbientActive 
               ? 'bg-[#FFE08A] text-[#3F2A1D] ring-4 ring-[#FFE08A]/40 font-black' 
               : 'bg-[#F6F0E8] hover:bg-[#F4B183]/40 text-[#6B4423]'
           }`}
-          title={isAmbientActive ? 'Hands-free mode is on (click to turn off)' : 'Turn on hands-free mode'}
+          title={isVoiceCommandActive ? 'Listening to spoken command (Say "Done" to finish)' : isAmbientActive ? 'Hands-free wake mode is on — say "Hey INCLU"' : 'Turn on hands-free mode'}
         >
-          {isAmbientActive && (
+          {(isAmbientActive || isVoiceCommandActive) && (
             <motion.span
               animate={{ scale: [1, 1.25, 1], opacity: [0.4, 0.8, 0.4] }}
               transition={{ duration: 1.6, repeat: Infinity }}
               className="absolute -inset-1 rounded-2xl border-2 border-[#FFE08A] pointer-events-none"
             />
           )}
-          <Mic size={22} className={isAmbientActive ? 'text-[#3F2A1D]' : 'text-[#6B4423]'} />
-          <span className="text-[9px] font-black uppercase tracking-tight">{isAmbientActive ? 'Listen' : 'Voice'}</span>
+          <Mic size={22} className={isAmbientActive || isVoiceCommandActive ? 'text-[#3F2A1D]' : 'text-[#6B4423]'} />
+          <span className="text-[9px] font-black uppercase tracking-tight">{isVoiceCommandActive ? 'Record' : isAmbientActive ? 'Listen' : 'Voice'}</span>
         </button>
 
         {/* 1. Quick Attendance */}

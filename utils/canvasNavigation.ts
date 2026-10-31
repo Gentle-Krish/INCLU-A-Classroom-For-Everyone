@@ -10,6 +10,7 @@ export interface BoardBounds {
 export interface SmoothFocusOptions {
   duration?: number;
   maxZoom?: number;
+  targetZoom?: number;
   padding?: number;
   showReticle?: boolean;
 }
@@ -34,7 +35,7 @@ export function cancelActiveFocusAnimation(): void {
 export function calculateFocusTransform(
   canvas: any,
   bounds: BoardBounds,
-  options?: { maxZoom?: number; padding?: number }
+  options?: { maxZoom?: number; targetZoom?: number; padding?: number }
 ): number[] | null {
   const width = canvas.getWidth?.() ?? canvas.width;
   const height = canvas.getHeight?.() ?? canvas.height;
@@ -59,16 +60,29 @@ export function calculateFocusTransform(
 
   const availableWidth = Math.max(1, width - leftInset - rightInset);
   const availableHeight = Math.max(1, height - topInset - bottomInset);
-  const maxZoom = options?.maxZoom ?? 1.05;
 
-  const zoom = Math.max(
-    0.01,
-    Math.min(
-      maxZoom,
-      availableWidth / Math.max(1, bounds.width),
-      availableHeight / Math.max(1, bounds.height)
-    )
+  const isLargeOrMedium = bounds.width >= 320 || bounds.height >= 300;
+  const defaultMaxZoom = isLargeOrMedium ? 0.75 : 1.0;
+  const maxZoom = options?.maxZoom ?? defaultMaxZoom;
+
+  const fittedZoom = Math.min(
+    maxZoom,
+    availableWidth / Math.max(1, bounds.width),
+    availableHeight / Math.max(1, bounds.height)
   );
+
+  let zoom: number;
+  if (options?.targetZoom !== undefined) {
+    zoom = Math.min(options.targetZoom, fittedZoom);
+  } else if (isLargeOrMedium) {
+    // For medium or large elements / cards / text definitions, target 75% zoom (0.75)
+    // so the entire content fits comfortably on screen without touching toolbars.
+    zoom = Math.min(0.75, fittedZoom);
+  } else {
+    zoom = Math.max(0.01, fittedZoom);
+  }
+
+  zoom = Math.max(0.05, zoom);
 
   const visibleCenterX = leftInset + availableWidth / 2;
   const visibleCenterY = topInset + availableHeight / 2;

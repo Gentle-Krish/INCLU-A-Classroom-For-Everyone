@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useStore } from '../store';
-import { ChevronDown, Timer } from 'lucide-react';
+import { ChevronDown, Timer, X } from 'lucide-react';
 import { useTranslation } from '../utils/translations';
 import gsap from 'gsap';
 
@@ -8,6 +8,7 @@ export const AgentCursor: React.FC = () => {
   const { t } = useTranslation();
   const { cursorPosition, isThinking, isActing, isClicking, currentAction, viewportTransform, agentMessage } = useStore();
   const [displayMessage, setDisplayMessage] = useState<string | null>(null);
+  const [speechBubbleVisible, setSpeechBubbleVisible] = useState(false);
   const [thinkTime, setThinkTime] = useState(0);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -64,14 +65,37 @@ export const AgentCursor: React.FC = () => {
   useEffect(() => {
     if (agentMessage) {
       setDisplayMessage(agentMessage);
+      setSpeechBubbleVisible(true);
+      const isCancellation = agentMessage.toLowerCase().includes('cancel');
+      // For cancellations, auto-dismiss after 4 seconds; other messages 7-10 seconds
+      const duration = isCancellation ? 4000 : Math.min(10000, 5000 + agentMessage.length * 40);
       const timer = setTimeout(() => {
-        useStore.getState().setAgentMessage(null);
-      }, 15000 + agentMessage.length * 50);
+        setSpeechBubbleVisible(false);
+        setTimeout(() => {
+          setDisplayMessage(null);
+          useStore.getState().setAgentMessage(null);
+        }, 300);
+      }, duration);
       return () => clearTimeout(timer);
     } else {
+      setSpeechBubbleVisible(false);
       setDisplayMessage(null);
     }
   }, [agentMessage]);
+
+  // When a new command is in action (isThinking or isActing), auto-dismiss previous speech overlay after 0.5s
+  useEffect(() => {
+    if ((isThinking || isActing) && (displayMessage || agentMessage)) {
+      const timer = setTimeout(() => {
+        setSpeechBubbleVisible(false);
+        setTimeout(() => {
+          setDisplayMessage(null);
+          useStore.getState().setAgentMessage(null);
+        }, 200);
+      }, 500); // 0.5s delay when new command is in action
+      return () => clearTimeout(timer);
+    }
+  }, [isThinking, isActing, displayMessage, agentMessage]);
 
   let timeStatus = 'Processing...';
   let timeColor = 'text-emerald-300';
@@ -83,7 +107,7 @@ export const AgentCursor: React.FC = () => {
     timeColor = 'text-amber-300';
   }
 
-  const isVisible = isThinking || isActing || !!displayMessage;
+  const isVisible = isThinking || isActing || (!!displayMessage && speechBubbleVisible);
   
   return (
     <div
@@ -95,21 +119,36 @@ export const AgentCursor: React.FC = () => {
     >
       {/* SPEECH BUBBLE */}
       {displayMessage && (
-        <div className="absolute bottom-8 left-4 z-50 animate-in slide-in-from-bottom-2 fade-in duration-300 pointer-events-auto">
-          <details className="relative rounded-2xl rounded-bl-none bg-white shadow-2xl border border-slate-200 overflow-hidden group min-w-[200px] max-w-[320px]">
+        <div className={`absolute bottom-8 left-4 z-50 pointer-events-auto transition-all duration-300 ${
+          speechBubbleVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'
+        }`}>
+          <details open className="relative rounded-2xl rounded-bl-none bg-white shadow-2xl border border-slate-200 overflow-hidden group min-w-[200px] max-w-[320px]">
             <summary className="p-3 text-sm font-semibold text-blue-600 cursor-pointer hover:bg-slate-50 list-none flex items-center gap-2 select-none [&::-webkit-details-marker]:hidden relative">
               <span className="relative flex h-2 w-2 mr-1">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-600 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600"></span>
               </span>
-              Inclu is responding
-              <ChevronDown size={16} className="ml-auto group-open:rotate-180 transition-transform" />
+              <span>Inclu is responding</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSpeechBubbleVisible(false);
+                  setDisplayMessage(null);
+                  useStore.getState().setAgentMessage(null);
+                }}
+                className="ml-auto p-0.5 rounded-full hover:bg-slate-200/70 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                title="Dismiss message"
+                aria-label="Dismiss message"
+              >
+                <X size={14} />
+              </button>
             </summary>
             <div className="px-3 pb-3 pt-1 text-xs font-medium text-slate-800 border-t border-slate-100 max-h-[300px] overflow-y-auto whitespace-pre-wrap">
               {displayMessage}
             </div>
             {/* Tail */}
-            <div className="absolute -bottom-2 left-0 h-4 w-4 bg-white hidden group-open:block" style={{ clipPath: 'polygon(0 0, 100% 0, 0 100%)' }}></div>
+            <div className="absolute -bottom-2 left-0 h-4 w-4 bg-white" style={{ clipPath: 'polygon(0 0, 100% 0, 0 100%)' }}></div>
           </details>
         </div>
       )}

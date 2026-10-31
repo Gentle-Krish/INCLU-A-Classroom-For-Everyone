@@ -1,15 +1,12 @@
 /**
- * Inclu Hands-Free Ambient Classroom Listener Hook
- * Enables hands-free ambient classroom voice interaction for teachers (Pak Damar Standard).
- * Supports zero-touch spoken commands:
- *  - "Inclu, buka timer 5 menit"
- *  - "Inclu, presensi siswa"
- *  - "Inclu, acak giliran" (Spin wheel)
- *  - "Inclu, buka kalkulator"
- *  - "Inclu, buat kuis"
- *  - "Inclu, pusatkan layar"
- *  - "Inclu, bersihkan papan"
- *  - "Inclu, buat peta konsep [topik]"
+ * Inclu Hands-Free Ambient Classroom Listener Hook & Accessibility Engine
+ * Enables zero-touch, hands-free voice commands for teachers and disabled users.
+ * 
+ * Supports:
+ *  - Accurate Wake Phrases: "Hey INCLU", "Hey Include", "A Inclu", "OK Inclu", or "Please record these commands"
+ *  - Live Continuous Command Dictation with real-time captions
+ *  - Finish / Execution Keyword: "Done", "Finished", "Submit", "Selesai" (or "Cancel" to abort)
+ *  - Single-shot Spoken Commands: e.g. "Hey Inclu, open a 5 minute timer, done"
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -26,6 +23,72 @@ export interface HandsFreeCommandResult {
   matched: boolean;
   action: string;
   detail?: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ACCURATE WAKE PHRASES & PHONETIC VARIANTS
+// Covers "Hey INCLU", "Hey Include", "A Inclu", "OK Inclu", "Please record these commands"
+// ─────────────────────────────────────────────────────────────────────────────
+export const WAKE_WORD_REGEX = /(?:^|\b)(?:(?:hey|hai|halo|ok|oke|hello|hi|ay|ey|a|yo)\s+)?(?:inclu|in\s*clu|in\s*clue|include|inklu|enclu|anclu)\b/i;
+export const RECORD_COMMANDS_REGEX = /(?:^|\b)(?:please\s+)?(?:start\s+)?record(?:ing)?\s+(?:these|this)?\s*commands?[:,\s]*/i;
+
+export const DONE_TERMINATION_REGEX = /\b(?:done|i(?:'m| am)? done|finished|that(?:'s| is) all|that(?:'s| is) it|submit|send|selesai|sudah)\b[.!?\s]*$/i;
+export const CANCEL_COMMAND_REGEX = /\b(?:cancel|abort|nevermind|batal)\b/i;
+
+export function detectWakePhrase(text: string): { matched: boolean; remainingText: string } {
+  const trimmed = text.trim();
+
+  // 1. Check "Please record these commands" pattern
+  const recordMatch = trimmed.match(RECORD_COMMANDS_REGEX);
+  if (recordMatch && recordMatch.index !== undefined) {
+    const after = trimmed.slice(recordMatch.index + recordMatch[0].length).replace(/^[,.:\s]+/, '').trim();
+    return { matched: true, remainingText: after };
+  }
+
+  // 2. Check "Hey Inclu" pattern
+  const wakeMatch = trimmed.match(WAKE_WORD_REGEX);
+  if (wakeMatch && wakeMatch.index !== undefined) {
+    const after = trimmed.slice(wakeMatch.index + wakeMatch[0].length).replace(/^[,.:\s]+/, '').trim();
+    return { matched: true, remainingText: after };
+  }
+
+  return { matched: false, remainingText: trimmed };
+}
+
+export function detectDoneTermination(text: string): { hasDone: boolean; commandWithoutDone: string } {
+  const trimmed = text.trim();
+  const match = trimmed.match(DONE_TERMINATION_REGEX);
+  if (match && match.index !== undefined) {
+    const clean = trimmed.slice(0, match.index).replace(/[,.:\s]+$/, '').trim();
+    return { hasDone: true, commandWithoutDone: clean };
+  }
+  return { hasDone: false, commandWithoutDone: trimmed };
+}
+
+export function executeSpokenCommand(commandText: string): HandsFreeCommandResult {
+  const clean = stripConversationalPrefix(commandText.trim());
+  if (!clean || clean.length < 2) {
+    return { matched: false, action: 'EMPTY' };
+  }
+
+  // 1. Try local whiteboard shortcut rules first (timer, attendance, wheel, calculator, etc.)
+  const localResult = matchAndExecuteHandsFreeCommand(clean);
+  if (localResult.matched) {
+    return localResult;
+  }
+
+  // 2. Fallback: Any other voice command routes directly to the AI Assistant for spatial canvas execution!
+  const store = useStore.getState();
+  store.setChatInputText(clean);
+  if (!store.isAiDrawerOpen && !store.isAiModalOpen) {
+    store.toggleAiDrawer();
+  }
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(new CustomEvent('execute-voice-prompt', { detail: { prompt: clean } }));
+  }
+  sounds.play('pop');
+  toast.info(`💡 Inclu Assistant executing: "${clean.slice(0, 36)}..."`);
+  return { matched: true, action: 'AI_ASSISTANT', detail: clean };
 }
 
 export function matchAndExecuteHandsFreeCommand(rawText: string): HandsFreeCommandResult {
@@ -66,15 +129,15 @@ export function matchAndExecuteHandsFreeCommand(rawText: string): HandsFreeComma
   }
 
   // 2. Attendance / Presensi: "buka absen", "presensi siswa", "absensi"
-  if (clean.includes('absen') || clean.includes('presensi') || clean.includes('kehadiran')) {
+  if (clean.includes('absen') || clean.includes('presensi') || clean.includes('kehadiran') || clean.includes('attendance')) {
     store.toggleAttendance();
     sounds.play('success');
     toast.success('👥 Hands-free: attendance opened.');
     return { matched: true, action: 'ATTENDANCE' };
   }
 
-  // 3. Random Wheel: "putar roda", "acak giliran", "roda acak", "siapa giliran"
-  if (clean.includes('putar roda') || clean.includes('acak giliran') || clean.includes('roda acak') || clean.includes('giliran')) {
+  // 3. Random Wheel: "putar roda", "acak giliran", "roda acak", "siapa giliran", "spin wheel"
+  if (clean.includes('putar roda') || clean.includes('acak giliran') || clean.includes('roda acak') || clean.includes('giliran') || clean.includes('spin wheel')) {
     const id = `wheel_${Date.now()}`;
     store.updateDomElement(id, {
       id,
@@ -100,7 +163,7 @@ export function matchAndExecuteHandsFreeCommand(rawText: string): HandsFreeComma
     return { matched: true, action: 'SPIN_WHEEL' };
   }
 
-  // 4. Calculator: "buka kalkulator", "hitung"
+  // 4. Calculator: "buka kalkulator", "hitung", "calculator"
   if (clean.includes('kalkulator') || clean.includes('calculator') || clean.includes('hitung angka')) {
     store.toggleCalculator();
     sounds.play('success');
@@ -109,23 +172,23 @@ export function matchAndExecuteHandsFreeCommand(rawText: string): HandsFreeComma
   }
 
   // 5. Quiz modal: "buka kuis", "mulai kuis" (when not asking AI to generate a topic-specific quiz)
-  if ((clean.includes('kuis') || clean.includes('quiz') || clean.includes('ulangan')) && !/\b(tentang|mengenai|soal|materi|topik)\b/i.test(clean)) {
+  if ((clean.includes('kuis') || clean.includes('quiz') || clean.includes('ulangan')) && !/\b(tentang|mengenai|soal|materi|topik|about|on)\b/i.test(clean)) {
     store.toggleQuiz();
     sounds.play('success');
     toast.success('❓ Hands-free: quiz opened.');
     return { matched: true, action: 'QUIZ' };
   }
 
-  // 6. Reset camera / Pusatkan layar: "pusatkan layar", "reset kamera", "tengah"
-  if (clean.includes('pusatkan') || clean.includes('reset kamera') || clean.includes('tengah')) {
+  // 6. Reset camera / Pusatkan layar: "pusatkan layar", "reset kamera", "tengah", "center canvas"
+  if (clean.includes('pusatkan') || clean.includes('reset kamera') || clean.includes('tengah') || clean.includes('center canvas')) {
     store.setViewport(1, [1, 0, 0, 1, 0, 0]);
     sounds.play('success');
     toast.success('🧭 Hands-free: canvas centered.');
     return { matched: true, action: 'RESET_VIEWPORT' };
   }
 
-  // 7. Clear canvas: "bersihkan papan", "hapus papan", "hapus coretan"
-  if (clean.includes('bersihkan papan') || clean.includes('hapus papan') || clean.includes('hapus semua coretan')) {
+  // 7. Clear canvas: "bersihkan papan", "hapus papan", "hapus coretan", "clear board", "clear canvas"
+  if (clean.includes('bersihkan papan') || clean.includes('hapus papan') || clean.includes('hapus semua coretan') || clean.includes('clear board') || clean.includes('clear canvas')) {
     window.dispatchEvent(new CustomEvent('clearCanvas'));
     sounds.play('pop');
     toast.info('🧹 Hands-free: whiteboard cleared.');
@@ -157,7 +220,7 @@ export function matchAndExecuteHandsFreeCommand(rawText: string): HandsFreeComma
     clean.includes('diagram') ||
     clean.includes('kuis') ||
     clean.includes('quiz') ||
-    /^(buat|buatkan|gambar|gambarkan|jelaskan|terangkan|ubah|edit|perbarui|tambahkan|rangkum|ringkas|apa|mengapa|kenapa|bagaimana|siapa|create|draw|explain|modify|update|what|how|why)\b/i.test(clean)
+    /^(buat|buatkan|gambar|gambarkan|jelaskan|terangkan|ubah|edit|perbarui|tambahkan|rangkum|ringkas|apa|mengapa|kenapa|bagaimana|siapa|create|draw|explain|modify|update|what|how|why|solve|plot)\b/i.test(clean)
   ) {
     store.setChatInputText(rawText);
     if (!store.isAiDrawerOpen && !store.isAiModalOpen) store.toggleAiDrawer();
@@ -182,6 +245,10 @@ export function useAmbientListener(options: UseAmbientListenerOptions = {}) {
   const isHandsFreeListening = useStore((s) => s.isHandsFreeListening);
   const setHandsFreeListening = useStore((s) => s.setHandsFreeListening);
   const setLastVoiceCommand = useStore((s) => s.setLastVoiceCommand);
+  const isVoiceCommandActive = useStore((s) => s.isVoiceCommandActive);
+  const setVoiceCommandActive = useStore((s) => s.setVoiceCommandActive);
+  const voiceInterimCaption = useStore((s) => s.voiceInterimCaption);
+  const setVoiceInterimCaption = useStore((s) => s.setVoiceInterimCaption);
 
   const [isProcessingSnippet, setIsProcessingSnippet] = useState(false);
   const [interimCaption, setInterimCaption] = useState('');
@@ -191,11 +258,57 @@ export function useAmbientListener(options: UseAmbientListenerOptions = {}) {
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const intervalTimerRef = useRef<any>(null);
+  const silenceTimerRef = useRef<any>(null);
+
   const isAmbientActiveRef = useRef(isHandsFreeListening);
+  const isCommandRecordingRef = useRef(isVoiceCommandActive);
+  const commandBufferRef = useRef<string>('');
 
   useEffect(() => {
     isAmbientActiveRef.current = isHandsFreeListening;
   }, [isHandsFreeListening]);
+
+  useEffect(() => {
+    isCommandRecordingRef.current = isVoiceCommandActive;
+  }, [isVoiceCommandActive]);
+
+  // Clears active silence timer
+  const clearSilenceTimeout = () => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+  };
+
+  // Finalizes and executes the accumulated command buffer
+  const finalizeAndExecuteCommand = useCallback(() => {
+    clearSilenceTimeout();
+    const complete = commandBufferRef.current.trim();
+    setVoiceCommandActive(false);
+    isCommandRecordingRef.current = false;
+    commandBufferRef.current = '';
+    setInterimCaption('');
+    setVoiceInterimCaption('');
+
+    if (complete.length > 1) {
+      sounds.play('success');
+      toast.success('🎙️ Command received! Executing...');
+      setLastVoiceCommand(complete);
+      executeSpokenCommand(complete);
+    }
+  }, [setVoiceCommandActive, setVoiceInterimCaption, setLastVoiceCommand]);
+
+  // Cancels the current voice command without executing
+  const cancelCommand = useCallback(() => {
+    clearSilenceTimeout();
+    setVoiceCommandActive(false);
+    isCommandRecordingRef.current = false;
+    commandBufferRef.current = '';
+    setInterimCaption('');
+    setVoiceInterimCaption('');
+    sounds.play('mic_off');
+    toast.info('Voice command cancelled');
+  }, [setVoiceCommandActive, setVoiceInterimCaption]);
 
   // Faster-Whisper slice audio buffer fallback for environments without Web Speech API
   const transcribeAudioSnippet = async (audioBlob: Blob): Promise<string> => {
@@ -214,7 +327,7 @@ export function useAmbientListener(options: UseAmbientListenerOptions = {}) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               base64Audio,
-              language: useStore.getState().language || 'id',
+              language: useStore.getState().language || 'en',
               model: 'tiny',
               mode: 'faster_whisper'
             })
@@ -248,18 +361,47 @@ export function useAmbientListener(options: UseAmbientListenerOptions = {}) {
     setIsProcessingSnippet(true);
     try {
       const transcript = await transcribeAudioSnippet(audioBlob);
-      if (transcript && transcript.length > 3) {
-        logger.info('[Ambient Listener] Faster-Whisper detected:', { transcript });
-        setLastVoiceCommand(transcript);
-        matchAndExecuteHandsFreeCommand(transcript);
-        if (options.onTranscriptDetected) {
-          options.onTranscriptDetected(transcript);
+      if (transcript && transcript.length > 2) {
+        logger.info('[Ambient Listener] Detected speech:', { transcript });
+
+        // Check for cancellation
+        if (CANCEL_COMMAND_REGEX.test(transcript) && isCommandRecordingRef.current) {
+          cancelCommand();
+          return;
+        }
+
+        if (!isCommandRecordingRef.current) {
+          const wake = detectWakePhrase(transcript);
+          if (wake.matched) {
+            const doneCheck = detectDoneTermination(wake.remainingText);
+            if (doneCheck.hasDone && doneCheck.commandWithoutDone.length > 1) {
+              // Single shot
+              sounds.play('success');
+              toast.success(`🎙️ Spoken command: "${doneCheck.commandWithoutDone.slice(0, 36)}..."`);
+              executeSpokenCommand(doneCheck.commandWithoutDone);
+            } else {
+              setVoiceCommandActive(true);
+              isCommandRecordingRef.current = true;
+              commandBufferRef.current = wake.remainingText;
+              sounds.play('mic_on');
+              toast.info('🎙️ Hey Inclu is listening! Say your command, then say "Done".');
+            }
+          }
+        } else {
+          const doneCheck = detectDoneTermination(transcript);
+          if (doneCheck.hasDone) {
+            const finalPiece = doneCheck.commandWithoutDone;
+            commandBufferRef.current = (commandBufferRef.current + ' ' + finalPiece).trim();
+            finalizeAndExecuteCommand();
+          } else {
+            commandBufferRef.current = (commandBufferRef.current + ' ' + transcript).trim();
+          }
         }
       }
     } finally {
       setIsProcessingSnippet(false);
     }
-  }, [isProcessingSnippet, options, setLastVoiceCommand]);
+  }, [isProcessingSnippet, cancelCommand, finalizeAndExecuteCommand, setVoiceCommandActive]);
 
   const startAmbient = async () => {
     try {
@@ -267,6 +409,11 @@ export function useAmbientListener(options: UseAmbientListenerOptions = {}) {
       const SpeechRecognition = typeof window !== 'undefined' && ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
 
       if (SpeechRecognition) {
+        if (speechRecognitionRef.current) {
+          try { speechRecognitionRef.current.stop(); } catch {}
+          speechRecognitionRef.current = null;
+        }
+
         const recognition = new SpeechRecognition();
         recognition.continuous = true;
         recognition.interimResults = true;
@@ -280,23 +427,95 @@ export function useAmbientListener(options: UseAmbientListenerOptions = {}) {
 
         recognition.onresult = (event: any) => {
           let interim = '';
+          let finalChunk = '';
+
           for (let i = event.resultIndex; i < event.results.length; ++i) {
             const transcript = event.results[i][0]?.transcript || '';
             if (event.results[i].isFinal) {
-              const final = transcript.trim();
-              if (final.length > 2) {
-                setLastVoiceCommand(final);
-                setInterimCaption('');
-                matchAndExecuteHandsFreeCommand(final);
-                if (options.onTranscriptDetected) {
-                  options.onTranscriptDetected(final);
-                }
-              }
+              finalChunk += ' ' + transcript;
             } else {
               interim += transcript;
             }
           }
-          if (interim) setInterimCaption(interim);
+
+          finalChunk = finalChunk.trim();
+
+          // Check cancellation anytime during command recording
+          if (isCommandRecordingRef.current && CANCEL_COMMAND_REGEX.test(finalChunk)) {
+            cancelCommand();
+            return;
+          }
+
+          if (finalChunk.length > 0) {
+            if (!isCommandRecordingRef.current) {
+              // WAITING FOR WAKE PHRASE ("Hey INCLU" or "Please record these commands")
+              const wake = detectWakePhrase(finalChunk);
+              if (wake.matched) {
+                // Check if user said the whole command AND "Done" in one breath
+                const doneCheck = detectDoneTermination(wake.remainingText);
+                if (doneCheck.hasDone && doneCheck.commandWithoutDone.length > 1) {
+                  // Single shot execution
+                  sounds.play('success');
+                  toast.success(`🎙️ Spoken command: "${doneCheck.commandWithoutDone.slice(0, 36)}..."`);
+                  setInterimCaption('');
+                  setVoiceInterimCaption('');
+                  executeSpokenCommand(doneCheck.commandWithoutDone);
+                } else if (wake.remainingText.length > 2) {
+                  // User said "Hey Inclu" followed by start of command
+                  setVoiceCommandActive(true);
+                  isCommandRecordingRef.current = true;
+                  commandBufferRef.current = wake.remainingText;
+                  setInterimCaption(wake.remainingText);
+                  setVoiceInterimCaption(wake.remainingText);
+                  sounds.play('mic_on');
+                  toast.info('🎙️ Hey Inclu is listening! Say your command, then say "Done".');
+                } else {
+                  // User said "Hey INCLU" or "Please record these commands"
+                  setVoiceCommandActive(true);
+                  isCommandRecordingRef.current = true;
+                  commandBufferRef.current = '';
+                  setInterimCaption('');
+                  setVoiceInterimCaption('');
+                  sounds.play('mic_on');
+                  toast.info('🎙️ Hey Inclu is listening! Speak your command and say "Done".');
+                }
+              }
+            } else {
+              // CURRENTLY RECORDING COMMAND (Wake word active, waiting for "Done")
+              const doneCheck = detectDoneTermination(finalChunk);
+              if (doneCheck.hasDone) {
+                // Spoken "Done" detected! Finalize and execute!
+                const finalPiece = doneCheck.commandWithoutDone;
+                commandBufferRef.current = (commandBufferRef.current + ' ' + finalPiece).trim();
+                finalizeAndExecuteCommand();
+              } else {
+                // Append chunk to buffer
+                commandBufferRef.current = (commandBufferRef.current + ' ' + finalChunk).trim();
+                setInterimCaption(commandBufferRef.current);
+                setVoiceInterimCaption(commandBufferRef.current);
+
+                // Auto-fallback silence safety (if user stops speaking for 7s without saying "Done")
+                clearSilenceTimeout();
+                silenceTimerRef.current = setTimeout(() => {
+                  if (isCommandRecordingRef.current && commandBufferRef.current.trim().length > 2) {
+                    finalizeAndExecuteCommand();
+                  }
+                }, 7000);
+              }
+            }
+          }
+
+          // Live interim captions
+          if (interim) {
+            if (isCommandRecordingRef.current) {
+              const display = `${commandBufferRef.current ? commandBufferRef.current + ' ' : ''}${interim}`;
+              setInterimCaption(display);
+              setVoiceInterimCaption(display);
+            } else {
+              setInterimCaption(interim);
+              setVoiceInterimCaption(interim);
+            }
+          }
         };
 
         recognition.onerror = (e: any) => {
@@ -305,10 +524,11 @@ export function useAmbientListener(options: UseAmbientListenerOptions = {}) {
 
         recognition.onend = () => {
           if (isAmbientActiveRef.current) {
-            // Keep continuous hands-free active seamlessly
             try {
               setTimeout(() => {
-                if (isAmbientActiveRef.current) recognition.start();
+                if (isAmbientActiveRef.current && speechRecognitionRef.current) {
+                  speechRecognitionRef.current.start();
+                }
               }, 250);
             } catch {}
           }
@@ -318,7 +538,7 @@ export function useAmbientListener(options: UseAmbientListenerOptions = {}) {
         speechRecognitionRef.current = recognition;
       }
 
-      // 2. Start background media stream & MediaRecorder only when SpeechRecognition is unavailable (Whisper fallback)
+      // 2. Start background media stream & MediaRecorder only when SpeechRecognition is unavailable
       if (!SpeechRecognition) {
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
@@ -348,15 +568,18 @@ export function useAmbientListener(options: UseAmbientListenerOptions = {}) {
 
       setHandsFreeListening(true);
       sounds.play('mic_on');
-      toast.info('🎙️ Hands-free mode is on — say "Inclu, ..."');
+      toast.info('🎙️ Hands-free mode is on — say "Hey INCLU" to command!');
     } catch (err) {
       logger.error('[Ambient Listener] Failed to start microphone', err);
       toast.error('Could not access the microphone for hands-free mode.');
       setHandsFreeListening(false);
+      setVoiceCommandActive(false);
     }
   };
 
   const stopAmbient = () => {
+    clearSilenceTimeout();
+
     if (speechRecognitionRef.current) {
       try {
         speechRecognitionRef.current.stop();
@@ -383,7 +606,11 @@ export function useAmbientListener(options: UseAmbientListenerOptions = {}) {
 
     audioChunksRef.current = [];
     setHandsFreeListening(false);
+    setVoiceCommandActive(false);
+    isCommandRecordingRef.current = false;
+    commandBufferRef.current = '';
     setInterimCaption('');
+    setVoiceInterimCaption('');
     sounds.play('mic_off');
     toast.info('Hands-free mode turned off');
   };
@@ -398,6 +625,7 @@ export function useAmbientListener(options: UseAmbientListenerOptions = {}) {
 
   useEffect(() => {
     return () => {
+      clearSilenceTimeout();
       if (speechRecognitionRef.current) {
         try { speechRecognitionRef.current.stop(); } catch {}
       }
@@ -408,11 +636,14 @@ export function useAmbientListener(options: UseAmbientListenerOptions = {}) {
 
   return {
     isAmbientActive: isHandsFreeListening,
+    isCommandRecording: isVoiceCommandActive,
     isProcessingSnippet,
-    interimCaption,
+    interimCaption: voiceInterimCaption || interimCaption,
     startAmbient,
     stopAmbient,
-    toggleAmbient
+    toggleAmbient,
+    finalizeAndExecuteCommand,
+    cancelCommand
   };
 }
 

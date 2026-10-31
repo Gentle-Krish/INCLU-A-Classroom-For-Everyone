@@ -8,13 +8,15 @@ export interface AiStatus {
   online: boolean;
   reason?: string;
   checkedAt?: number;
+  visionModel?: string;
+  dualModel?: boolean;
   ollamaStatus?: { online: boolean; hasModel: boolean; models: string[]; activeModel?: string };
   geminiStatus?: { online: boolean; reason: string };
   vertexStatus?: { online: boolean; reason: string };
 }
 
 export const useAiStatus = () => {
-  const { aiPreference, geminiApiKey, ollamaBaseUrl, selectedOllamaModel, selectedVertexModel, selectedGeminiModel } = useStore();
+  const { aiPreference, geminiApiKey, ollamaBaseUrl, selectedOllamaModel, selectedVisionModel, selectedVertexModel, selectedGeminiModel } = useStore();
   const [status, setStatus] = useState<AiStatus>({
     mode: 'unavailable',
     model: '',
@@ -28,7 +30,7 @@ export const useAiStatus = () => {
         const res = await fetch(`${apiUrl}/api/ai/status`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ aiPreference, geminiApiKey, ollamaBaseUrl, selectedOllamaModel, selectedVertexModel, selectedGeminiModel })
+          body: JSON.stringify({ aiPreference, geminiApiKey, ollamaBaseUrl, selectedOllamaModel, selectedVisionModel, selectedVertexModel, selectedGeminiModel })
         });
 
         if (res.ok) {
@@ -51,7 +53,7 @@ export const useAiStatus = () => {
       window.removeEventListener('online', fetchStatus);
       window.removeEventListener('offline', fetchStatus);
     };
-  }, [aiPreference, selectedOllamaModel, selectedGeminiModel, selectedVertexModel, geminiApiKey, ollamaBaseUrl]);
+  }, [aiPreference, selectedOllamaModel, selectedVisionModel, selectedGeminiModel, selectedVertexModel, geminiApiKey, ollamaBaseUrl]);
 
   return status;
 };

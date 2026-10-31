@@ -39,6 +39,7 @@ eval_results.json
 lint_output.txt
 *.local
 brag-output*/
+scratch/
 
 # IDE / platform metadata
 metadata.json

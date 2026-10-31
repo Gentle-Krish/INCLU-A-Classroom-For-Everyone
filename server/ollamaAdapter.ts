@@ -299,7 +299,8 @@ export const generateAgentActionsOllama = async (
   intent?: string,
   forceTools?: boolean,
   lessonContext?: any,
-  modelOverride?: string
+  modelOverride?: string,
+  visionModelOverride?: string
 ) => {
   const cleanCanvasBase64 = canvasImageBase64 ? canvasImageBase64.replace(/^data:image\/(png|jpeg|jpg);base64,/, "") : "";
   
@@ -347,7 +348,7 @@ export const generateAgentActionsOllama = async (
   // query the installed local vision model (Moondream/LLaVA) as an eye sensor!
   if (!isVisionModel && cleanCanvasBase64 && isVisualQuery(prompt)) {
     try {
-      const visionModel = await getInstalledVisionModel(customUrl);
+      const visionModel = (visionModelOverride && visionModelOverride !== 'none') ? visionModelOverride : await getInstalledVisionModel(customUrl);
       if (visionModel) {
         logger.info(`[Dual-Model Hybrid] Invoking Vision Coprocessor (${visionModel}) for prompt: ${prompt}`);
         const observation = await queryVisionCoprocessor(visionModel, prompt, cleanCanvasBase64, customUrl);

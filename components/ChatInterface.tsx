@@ -21,6 +21,7 @@ import { sounds } from '../utils/sounds';
 import { useTranslation } from '../utils/translations';
 import { toast } from '../utils/toast';
 import { useAiStatus } from '../hooks/useAiStatus';
+import { deleteCurrentSelection } from '../utils/boardDeletion';
 
 const SPEECH_TYPE_MESSAGE = 'Speech could not be heard. Type the question.';
 let lastSpeechFailureToastAt = 0;
@@ -99,11 +100,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ canvasRef }) => {
 
   const liveAiStatus = useAiStatus();
   const isOfflineMode = aiPreference === 'ollama' || liveAiStatus.mode === 'ollama';
+  const visionEye = liveAiStatus.visionModel || (typeof window !== 'undefined' ? localStorage.getItem('selected_vision_model') : 'moondream');
+  const hasVisionEye = isOfflineMode && visionEye && visionEye !== 'none';
   const activeModelDisplay = isOfflineMode
-    ? ((selectedOllamaModel || (liveAiStatus.mode === 'ollama' ? liveAiStatus.model : 'inclu-gemma:2b') || 'inclu-gemma:2b') === 'inclu-gemma:2b'
-        || /gemma|Chalk|Inclu|chalk-model/i.test(selectedOllamaModel || liveAiStatus.model || '')
-          ? 'Inclu local model'
-          : (selectedOllamaModel || (liveAiStatus.mode === 'ollama' ? liveAiStatus.model : 'inclu-gemma:2b') || 'inclu-gemma:2b'))
+    ? (hasVisionEye
+        ? `Inclu local model + ${visionEye.split(':')[0]}`
+        : ((selectedOllamaModel || (liveAiStatus.mode === 'ollama' ? liveAiStatus.model : 'inclu-gemma:2b') || 'inclu-gemma:2b') === 'inclu-gemma:2b'
+            || /gemma|Chalk|Inclu|chalk-model/i.test(selectedOllamaModel || liveAiStatus.model || '')
+              ? 'Inclu local model'
+              : (selectedOllamaModel || (liveAiStatus.mode === 'ollama' ? liveAiStatus.model : 'inclu-gemma:2b') || 'inclu-gemma:2b')))
     : (aiPreference === 'vertex' || liveAiStatus.mode === 'vertex')
     ? (selectedVertexModel || 'Vertex AI')
     : (selectedGeminiModel || 'Gemini Cloud');
@@ -767,17 +772,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ canvasRef }) => {
   };
 
   const handleDeleteSelection = () => {
-    if (!canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const activeObjects = canvas.getActiveObjects();
-    if (activeObjects.length > 0) {
-      activeObjects.forEach((obj: any) => {
-        canvas.remove(obj);
-        if (obj.isDomPlaceholder) removeDomElement(obj.id);
-      });
-      canvas.discardActiveObject().requestRenderAll();
-      useStore.getState().addLog(`Menghapus ${activeObjects.length} objek.`);
-    }
+    deleteCurrentSelection(canvasRef.current);
   };
 
   const isBusy = isThinking || isActing || actionQueue.length > 0;

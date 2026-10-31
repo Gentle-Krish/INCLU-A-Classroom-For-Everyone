@@ -10,6 +10,7 @@ import { ShareDialog } from './components/ShareDialog';
 import { ExportDialog } from './components/ExportDialog';
 import { ToolOverlay } from './components/ToolOverlay';
 import { AssistiveDock } from './components/AssistiveDock';
+import { HandsFreeVoiceHud } from './components/HandsFreeVoiceHud';
 import { HistoryView } from './components/HistoryView';
 import { SettingsView } from './components/SettingsView';
 import { QuickGuideModal } from './components/QuickGuideModal';
@@ -17,6 +18,7 @@ import { GsapInteractionEffects } from './components/GsapInteractionEffects';
 import { SaveMenu } from './components/SaveMenu';
 import { useSocketSync } from './hooks/useSocketSync';
 import { useAiStatus } from './hooks/useAiStatus';
+import { deleteCurrentSelection } from './utils/boardDeletion';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Users, LayoutDashboard, Home, Square, Layers, FileText,
@@ -76,21 +78,7 @@ const App: React.FC = () => {
   const joinedCount = countJoinedStudents(classRoster);
 
   const handleDeleteSelection = () => {
-    if (!canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const activeObjects = canvas.getActiveObjects ? canvas.getActiveObjects() : (canvas.getActiveObject ? [canvas.getActiveObject()].filter(Boolean) : []);
-    if (activeObjects.length > 0) {
-      activeObjects.forEach((obj: any) => {
-        canvas.remove(obj);
-        if (obj.isDomPlaceholder) {
-          useStore.getState().removeDomElement(obj.id);
-        }
-      });
-      if (typeof canvas.discardActiveObject === 'function') {
-        canvas.discardActiveObject();
-      }
-      canvas.requestRenderAll();
-    }
+    deleteCurrentSelection(canvasRef.current);
   };
 
   useEffect(() => {
@@ -466,6 +454,7 @@ const App: React.FC = () => {
             <SettingsView isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
             <ToolOverlay />
             <AssistiveDock />
+            <HandsFreeVoiceHud />
 
             {/* 3 & 4. CANVAS AREA & VERTICAL TOOLBAR */}
             <main className="flex-1 min-w-0 relative z-10 h-full bg-[#FBF7F2] rounded-[28px] border border-[#E7DDD2] shadow-[0_16px_40px_rgba(63,42,29,0.06)] overflow-hidden flex flex-col">

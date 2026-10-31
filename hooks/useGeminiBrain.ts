@@ -11,7 +11,7 @@ import { isQuestCommand } from '../utils/questSchema';
 import { algorithmLesson } from '../utils/algorithmTrace';
 import { equationLine, equationMarkdown, isNewPageRequest, penFontSize, penLine, writeTextIntent, isUnsupportedDrawingRequest } from '../utils/boardIntent';
 import { visiblePageFrame } from '../utils/boardScroll';
-import { smoothFocusCanvas } from '../utils/canvasNavigation';
+import { smoothFocusCanvas, findNextWidgetPosition } from '../utils/canvasNavigation';
 import { STANDARD_FONT_SIZES, resolveFontSize } from '../constants';
 
 const logger = createLogger('gemini-brain');
@@ -27,7 +27,7 @@ const synthesizeFallbackResponse = (
   lessonPlan: LessonPlan | null
 ): string => {
   if (functionCalls.length === 0) {
-    return 'Sure, how can I help you today?';
+    return 'Sorry, I cannot do that at the moment.';
   }
 
   const toolNames = functionCalls.map(c => c.name);
@@ -136,9 +136,10 @@ export function normalizeSpokenNumbers(input: string): string {
 export function stripConversationalPrefix(input: string): string {
   return input
     .trim()
-    .replace(/^(?:(?:hai|halo|hey|ok|oke|permisi|pak|bu)\s+)?(?:Chalk|Inclu)[,.!?\s]+(?:(?:tolong|coba|bisa|mohon|please|can\s+you|could\s+you|bantu(?:\s+saya)?)\s+)+/i, '')
-    .replace(/^(?:hai|halo|hey|ok|oke)\s+(?:Chalk|Inclu)[,.!?\s]*/i, '')
-    .replace(/^(?:Chalk|Inclu)[,.!?\s]+/i, '')
+    .replace(/^(?:please\s+)?(?:start\s+)?record(?:ing)?\s+(?:these|this)?\s*commands?[:,\s]*/i, '')
+    .replace(/^(?:(?:hai|halo|hey|ok|oke|permisi|pak|bu|yo|hello|hi|ay|ey|a)\s+)?(?:Chalk|Inclu|include|inklu|in\s*clu|enclu)[,.!?\s]+(?:(?:tolong|coba|bisa|mohon|please|can\s+you|could\s+you|bantu(?:\s+saya)?)\s+)+/i, '')
+    .replace(/^(?:hai|halo|hey|ok|oke|hello|hi|yo|ay|ey|a)\s+(?:Chalk|Inclu|include|inklu|in\s*clu|enclu)[,.!?\s]*/i, '')
+    .replace(/^(?:Chalk|Inclu|include|inklu|in\s*clu|enclu)[,.!?\s]+/i, '')
     .replace(/^(?:tolong|coba|bisa|mohon|please|can\s+you|could\s+you|bantu(?:\s+saya)?)\s+/i, '')
     .trim();
 }
@@ -359,13 +360,9 @@ export function evaluateJevSystemOne(
     }
 
     if (typeof storeState.updateDomElement === 'function') {
-      const vpt = canvas?.viewportTransform || [1, 0, 0, 1, 0, 0];
-      const zoom = canvas?.getZoom?.() || vpt[0] || 1;
-      const canvasW = canvas?.getWidth?.() ?? canvas?.width ?? 1920;
-      const canvasH = canvas?.getHeight?.() ?? canvas?.height ?? 1080;
-      const offset = existingTimers.length * 36;
-      const spawnX = Math.round((-vpt[4] + canvasW * 0.72) / zoom) + offset;
-      const spawnY = Math.round((-vpt[5] + canvasH * 0.32) / zoom) + offset;
+      const pos = findNextWidgetPosition({ width: 340, height: 460 });
+      const spawnX = pos.x;
+      const spawnY = pos.y;
       const id = `timer_${Date.now()}`;
       storeState.updateDomElement(id, {
         id,
@@ -382,15 +379,15 @@ export function evaluateJevSystemOne(
         zIndex: 15
       });
       window.dispatchEvent(new CustomEvent('addCanvasPlaceholder', {
-        detail: { id, x: spawnX, y: spawnY, width: 340, height: 460, autofocus: true }
+        detail: { id, x: spawnX, y: spawnY, width: 340, height: 460, autofocus: true, targetZoom: 0.75 }
       }));
     }
     if (typeof storeState.toggleTimer === 'function' && typeof storeState.updateDomElement !== 'function' && !storeState.isTimerOpen) {
       storeState.toggleTimer();
     }
     return { handled: true, actionTaken: 'TOGGLE_TIMER', message: `⏱️ ${durationLabel} timer created on the whiteboard.` };
-  }
-
+  }
+
   if (/^(tutup|close|sembunyikan|hide)\s+(timer|stopwatch)/i.test(norm)) {
     if (storeState.isTimerOpen) storeState.toggleTimer();
     return { handled: true, actionTaken: 'CLOSE_TIMER', message: '⏱️ Timer closed.' };
@@ -739,7 +736,7 @@ export const useGeminiBrain = () => {
           const doc = jevResult.lessonDocument;
           const frame = doc.handwriting
             ? visiblePageFrame(canvas)
-            : { x: 720, y: 420, width: 680, height: 520 };
+            : { ...findNextWidgetPosition({ width: 720, height: 520 }), width: 720, height: 520 };
           const config = doc.handwriting
             ? { ...doc, fontSize: penFontSize(doc.markdown, frame.width, frame.height) }
             : doc;
@@ -759,7 +756,7 @@ export const useGeminiBrain = () => {
             zIndex: 12,
           });
           window.dispatchEvent(new CustomEvent('addCanvasPlaceholder', {
-            detail: { id, x: frame.x, y: frame.y, width: frame.width, height: frame.height, autofocus: true },
+            detail: { id, x: frame.x, y: frame.y, width: frame.width, height: frame.height, autofocus: true, targetZoom: 0.75 },
           }));
         }
         if (jevResult.canvasText?.text && canvas) {
@@ -1123,7 +1120,9 @@ ${jevDirective}
       let lastWorldPos = { x: centerX, y: centerY };
 
       const getGridPos = (gridPos?: string, elemWidth = 400, elemHeight = 400) => {
-        if (!gridPos) return lastWorldPos;
+        if (!gridPos || gridPos === 'CENTER') {
+          return findNextWidgetPosition({ width: elemWidth, height: elemHeight });
+        }
         const vWidth = Math.max(800, br.x - tl.x);
         const vHeight = Math.max(600, br.y - tl.y);
 

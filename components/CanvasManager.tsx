@@ -11,6 +11,7 @@ import { toast } from '../utils/toast';
 import { parseDocumentFile } from '../utils/documentParser';
 import { markdownToMermaidMindmap } from './MermaidTool';
 import { smoothFocusCanvas } from '../utils/canvasNavigation';
+import { deleteCurrentSelection } from '../utils/boardDeletion';
 import { UploadCloud, FileText, Image as ImageIcon, Sparkles } from 'lucide-react';
 
 interface CanvasManagerProps {
@@ -186,17 +187,9 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
     function deleteObject(eventData: any, transform: any) {
       const target = transform.target;
       const canvas = target.canvas;
-      if (target.type === 'activeSelection') {
-        target.forEachObject((obj: any) => {
-          canvas.remove(obj);
-          if (obj.isDomPlaceholder) removeDomElement(obj.id);
-        });
-        canvas.discardActiveObject();
-      } else {
-        canvas.remove(target);
-        if (target.isDomPlaceholder) removeDomElement(target.id);
+      if (canvas) {
+        deleteCurrentSelection(canvas);
       }
-      canvas.requestRenderAll();
       return true;
     }
 
@@ -215,7 +208,7 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
     const canvas = new window.fabric.Canvas(canvasRef.current, {
       backgroundColor: 'transparent',
       selection: true,
-      allowTouchScrolling: true,
+      allowTouchScrolling: false,
       preserveObjectStacking: true,
       renderOnAddRemove: true,
       imageSmoothingEnabled: true,
@@ -239,6 +232,9 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
     });
 
     fabricRef.current = canvas;
+    if (typeof window !== 'undefined') {
+      (window as any).__fabricCanvas = canvas;
+    }
 
     const cleanupEmptyTextObject = (obj: any) => {
       if (!obj || obj.isEditing) return;
@@ -376,19 +372,18 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
         setViewport(1, [1, 0, 0, 1, 0, 0]);
       }
 
-      // Deletion
+      // Universal Deletion (Delete / Backspace)
       if (e.key === 'Delete' || e.key === 'Backspace') {
+        const isInput = () => {
+          const el = document.activeElement;
+          if (!el) return false;
+          const tag = el.tagName.toLowerCase();
+          return tag === 'input' || tag === 'textarea' || (el as HTMLElement).isContentEditable;
+        };
         const activeObj = canvas.getActiveObject();
-        if (activeObj && activeObj.isEditing) return;
-        const activeObjects = canvas.getActiveObjects();
-        if (activeObjects.length > 0) {
-          activeObjects.forEach((obj: any) => {
-            canvas.remove(obj);
-            if (obj.isDomPlaceholder) removeDomElement(obj.id);
-          });
-          canvas.discardActiveObject().requestRenderAll();
-          addLog(`Menghapus ${activeObjects.length} objek.`);
-        }
+        if (isInput() || (activeObj && activeObj.isEditing)) return;
+
+        deleteCurrentSelection(canvas);
       }
     };
 
@@ -417,8 +412,11 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
         return;
       }
       
-      // Pan triggers: Hand tool, Right-click, Middle-click, or Touch-on-empty
-      if (useStore.getState().activeTool === 'HAND' || isRightClick || isMiddleClick || (isTouch && !opt.target)) {
+      // Pan triggers: ONLY when HAND tool is active, or Right-click, or Middle-click
+      const currentTool = useStore.getState().activeTool;
+      const canPan = currentTool === 'HAND' || isRightClick || isMiddleClick;
+
+      if (canPan) {
         isPanning = true;
         canvas.__isPanning = true;
         canvas.selection = false;
@@ -458,6 +456,11 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
     });
 
     canvas.on('mouse:wheel', function(opt: any) {
+      if (canvas.isDrawingMode && (canvas as any)._isCurrentlyDrawing) {
+        opt.e.preventDefault();
+        opt.e.stopPropagation();
+        return;
+      }
       if (useStore.getState().activeTool === 'HAND' && !isViewerUrl && !opt.e.ctrlKey && !opt.e.metaKey) {
         const vpt = [...canvas.viewportTransform];
         vpt[4] -= opt.e.deltaX;
@@ -556,7 +559,7 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
     window.addEventListener('resizeCanvasPlaceholder', handleResizePlaceholder);
 
     const handleAddPlaceholder = (e: any) => {
-      const { id, x, y, width = 400, height = 350, autofocus = true } = e.detail || {};
+      const { id, x, y, width = 400, height = 350, autofocus = true, targetZoom } = e.detail || {};
       if (!id || !window.fabric) return;
       const existing = canvas.getObjects().find((o: any) => o.id === id);
       const posX = x ?? 960;
@@ -589,7 +592,7 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
           top: posY - height / 2,
           width,
           height,
-        }, { duration: 800, showReticle: true });
+        }, { duration: 800, showReticle: true, targetZoom: targetZoom ?? 0.75, maxZoom: 0.75 });
       }
     };
     window.addEventListener('addCanvasPlaceholder', handleAddPlaceholder);
@@ -615,14 +618,14 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
     window.addEventListener('addCanvasTextAtCenter', handleAddTextAtCenter);
 
     const handleFocusPlaceholder = (e: any) => {
-      const { x, y, width = 340, height = 460 } = e.detail || {};
+      const { x, y, width = 340, height = 460, targetZoom } = e.detail || {};
       if (canvas && !canvas.__isPanning && x !== undefined && y !== undefined) {
         smoothFocusCanvas(canvas, {
           left: x - width / 2,
           top: y - height / 2,
           width,
           height,
-        }, { duration: 800, showReticle: true });
+        }, { duration: 800, showReticle: true, targetZoom: targetZoom ?? 0.75, maxZoom: 0.75 });
       }
     };
     window.addEventListener('focusCanvasPlaceholder', handleFocusPlaceholder);
@@ -743,10 +746,27 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
 
     canvas.on('selection:cleared', () => {
       pruneAllEmptyTexts();
+      useStore.getState().setSelectedWidgetId(null);
     });
 
-    canvas.on('selection:updated', () => {
+    canvas.on('selection:created', (e: any) => {
       pruneAllEmptyTexts();
+      const target = e.selected?.[0] || e.target;
+      if (target?.isDomPlaceholder) {
+        useStore.getState().setSelectedWidgetId(target.id);
+      } else {
+        useStore.getState().setSelectedWidgetId(null);
+      }
+    });
+
+    canvas.on('selection:updated', (e: any) => {
+      pruneAllEmptyTexts();
+      const target = e.selected?.[0] || e.target;
+      if (target?.isDomPlaceholder) {
+        useStore.getState().setSelectedWidgetId(target.id);
+      } else {
+        useStore.getState().setSelectedWidgetId(null);
+      }
     });
     
     canvas.on('path:created', (e: any) => {
@@ -971,7 +991,7 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
     canvas.freeDrawingBrush.width = brushWidth;
     canvas.freeDrawingBrush.decimate = 2.0; // ⚡ Real-time point simplification (Douglas-Peucker approximation)
     canvas.skipTargetFind = activeTool === 'HAND';
-    canvas.allowTouchScrolling = activeTool !== 'HAND';
+    canvas.allowTouchScrolling = false;
 
     if (isViewerUrl) {
       canvas.isDrawingMode = false;
@@ -1466,9 +1486,10 @@ export const CanvasManager: React.FC<CanvasManagerProps> = ({ onCanvasReady }) =
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className="absolute inset-0 overflow-hidden bg-transparent rounded-2xl border-none"
+      className="absolute inset-0 overflow-hidden bg-transparent rounded-2xl border-none touch-none select-none"
+      style={{ touchAction: 'none' }}
     >
-      <canvas ref={canvasRef} className="block" />
+      <canvas ref={canvasRef} className="block touch-none" style={{ touchAction: 'none' }} />
       <DomOverlay />
       <AgentCursor />
 

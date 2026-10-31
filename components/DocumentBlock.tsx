@@ -65,7 +65,7 @@ export const DocumentBlock: React.FC<DocumentBlockProps> = ({ config }) => {
   };
 
   const handwriting = Boolean(safeConfig.handwriting);
-  const penSize = handwriting ? Math.max(28, Number(safeConfig.fontSize) || 40) : undefined;
+  const penSize = handwriting ? Math.max(24, Number(safeConfig.fontSize) || 34) : undefined;
   const proseStyle = handwriting
     ? {
         fontFamily: '"Segoe Print", "Comic Sans MS", cursive',

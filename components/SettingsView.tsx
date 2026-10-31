@@ -7,7 +7,7 @@ import {
   Mic, Radio, Upload, Sparkles, Database, FileSpreadsheet, Download,
   Shapes, Users, Flame, Workflow, HeartHandshake, AlertCircle
 } from 'lucide-react';
-import { useStore } from '../store';
+import { useStore, defaultVoiceConfig, defaultExperimentalConfig } from '../store';
 import { toast } from '../utils/toast';
 import { useTranslation, SUPPORTED_LANGUAGES } from '../utils/translations';
 import { SupportedLanguage } from '../types';
@@ -65,6 +65,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ isOpen = true, onClo
     ollamaBaseUrl, setOllamaBaseUrl,
     selectedGeminiModel, setSelectedGeminiModel,
     selectedOllamaModel, setSelectedOllamaModel,
+    selectedVisionModel, setSelectedVisionModel,
     selectedVertexModel, setSelectedVertexModel,
     theme, toggleTheme,
     userName, setUserName,
@@ -87,6 +88,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ isOpen = true, onClo
     return selectedGeminiModel;
   });
   const [localOllamaModel, setLocalOllamaModel] = useState(selectedOllamaModel);
+  const [localVisionModel, setLocalVisionModel] = useState(selectedVisionModel || "moondream");
   const [localVertexModel, setLocalVertexModel] = useState(() => {
     return (!selectedVertexModel || selectedVertexModel === 'gemini-3.7-flash') ? 'gemini-3.8-flash' : selectedVertexModel;
   });
@@ -198,6 +200,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ isOpen = true, onClo
           geminiApiKey: localKey, 
           ollamaBaseUrl: localOllamaUrl,
           selectedOllamaModel: localOllamaModel,
+          selectedVisionModel: localVisionModel,
           aiPreference: localAiPref
         })
       });
@@ -210,7 +213,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ isOpen = true, onClo
 
   useEffect(() => {
     handleProbe();
-  }, [localAiPref, localOllamaModel]);
+  }, [localAiPref, localOllamaModel, localVisionModel]);
 
   useEffect(() => {
     if (!liveAiStatus.checkedAt) return;
@@ -233,6 +236,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ isOpen = true, onClo
     setOllamaBaseUrl(localOllamaUrl);
     setSelectedGeminiModel(localGeminiModel);
     setSelectedOllamaModel(localOllamaModel);
+    setSelectedVisionModel(localVisionModel);
+    localStorage.setItem("selected_vision_model", localVisionModel);
     setSelectedVertexModel(localVertexModel);
     setTranscribeMode(localTranscribeMode);
     setVoiceConfig(localVoiceConfig);
@@ -254,6 +259,58 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ isOpen = true, onClo
     setSaved(true);
     toast.success(t('saved', 'Settings saved') + '!');
     setTimeout(() => setSaved(false), 2000);
+  };
+
+  const [resetting, setResetting] = useState(false);
+
+  const handleResetDefaults = () => {
+    // 1. Reset local state
+    setLocalKey('');
+    setLocalOllamaUrl('http://localhost:11434');
+    setLocalGeminiModel(STRONG_GEMMA_MODEL);
+    setLocalOllamaModel(CHALK_LOCAL_DOWNLOAD_MODEL);
+    setLocalVisionModel('moondream');
+    setLocalVertexModel('gemini-3.8-flash');
+    setLocalTranscribeMode('webspeech');
+    setLocalVoiceConfig(defaultVoiceConfig);
+    setLocalExpConfig(defaultExperimentalConfig);
+    setLocalName('Teacher');
+    setLocalAiPref('ollama');
+    setLocalLang('en');
+    setSoundEnabled(true);
+
+    // 2. Commit to store
+    setGeminiApiKey('');
+    setOllamaBaseUrl('http://localhost:11434');
+    setSelectedGeminiModel(STRONG_GEMMA_MODEL);
+    setSelectedOllamaModel(CHALK_LOCAL_DOWNLOAD_MODEL);
+    setSelectedVisionModel('moondream');
+    setSelectedVertexModel('gemini-3.8-flash');
+    setTranscribeMode('webspeech');
+    setVoiceConfig(defaultVoiceConfig);
+    setExperimentalConfig(defaultExperimentalConfig);
+    setUserName('Teacher');
+    setAiPreference('ollama');
+    setLanguage('en');
+
+    // 3. Update localStorage
+    localStorage.removeItem('gemini_api_key');
+    localStorage.setItem('ollama_base_url', 'http://localhost:11434');
+    localStorage.setItem('selected_gemini_model', STRONG_GEMMA_MODEL);
+    localStorage.setItem('selected_ollama_model', CHALK_LOCAL_DOWNLOAD_MODEL);
+    localStorage.setItem('selected_vision_model', 'moondream');
+    localStorage.setItem('selected_vertex_model', 'gemini-3.8-flash');
+    localStorage.setItem('chalk_transcribe_mode', 'webspeech');
+    localStorage.setItem('chalk_voice_config', JSON.stringify(defaultVoiceConfig));
+    localStorage.setItem('chalk_experimental_config', JSON.stringify(defaultExperimentalConfig));
+    localStorage.setItem('chalk_user_name', 'Teacher');
+    localStorage.setItem('ai_preference', 'ollama');
+    localStorage.setItem('chalk_language', 'en');
+    localStorage.setItem('chalk_sound', 'on');
+
+    setResetting(true);
+    toast.success('All settings reset to default.');
+    setTimeout(() => setResetting(false), 2000);
   };
 
   const handleClearAllData = () => {
@@ -302,6 +359,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ isOpen = true, onClo
                 <p className="text-xs sm:text-sm font-semibold text-[#A08B7A] mt-0.5">{t('settingsSubtitle', 'Configure AI, class tools, and board preferences')}</p>
               </div>
               <div className="flex items-center gap-2 sm:gap-3">
+                <motion.button
+                  type="button"
+                  whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                  onClick={handleResetDefaults}
+                  title="Reset all settings to default"
+                  className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 bg-[#F6F0E8] text-[#6B4423] hover:bg-[#E7DDD2] border border-[#E7DDD2] rounded-xl font-bold text-xs sm:text-sm transition-colors cursor-pointer"
+                >
+                  <RotateCcw size={15} className={`transition-transform duration-300 ${resetting ? '-rotate-180 text-amber-700' : ''}`} />
+                  <span>{resetting ? 'Reset' : 'Reset changes'}</span>
+                </motion.button>
                 <motion.button
                   whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
                   onClick={handleSave}
@@ -470,34 +537,127 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ isOpen = true, onClo
                       />
                     </Field>
 
-                    <Field label="Installed Ollama model" hint="Local model used for board commands and visuals">
-                      <select
-                        value={localOllamaModel}
-                        onChange={e => setLocalOllamaModel(e.target.value)}
-                        className={inputCls}
-                      >
-                        <optgroup label="Fast Text Models (Offline)">
-                          <option value={CHALK_LOCAL_DOWNLOAD_MODEL}>Inclu local model (inclu-gemma:2b)</option>
-                        </optgroup>
-                        <optgroup label="Vision & Whiteboard OCR Models (Offline Eyes)">
-                          <option value="moondream">Moondream 2 (~1.8B - Ultra-fast Vision)</option>
-                          <option value="llava:7b">LLaVA 7B (~7B - High Accuracy OCR & Vision)</option>
-                        </optgroup>
-                        {detectedOllamaModels.some(m => !/Chalk/i.test(m) && m !== 'chalk-model:latest' && m !== CHALK_LOCAL_DOWNLOAD_MODEL && m.toLowerCase() !== CHALK_LOCAL_BASE_MODEL && m !== 'moondream' && m !== 'llava:7b' && !m.startsWith('moondream:') && !m.startsWith('llava:')) && (
-                          <optgroup label="Other models found on this laptop">
-                            {detectedOllamaModels.filter(m => !/Chalk/i.test(m) && m !== 'chalk-model:latest' && m !== CHALK_LOCAL_DOWNLOAD_MODEL && m.toLowerCase() !== CHALK_LOCAL_BASE_MODEL && m !== 'moondream' && m !== 'llava:7b' && !m.startsWith('moondream:') && !m.startsWith('llava:')).map(m => (
-                              <option key={m} value={m}>{/gemma/i.test(m) ? 'Inclu local model' : `${m} (installed locally)`}</option>
-                            ))}
-                          </optgroup>
-                        )}
-                      </select>
-                    </Field>
+                    {/* Multi-Model Dual Execution Setup */}
+                    <div className="space-y-3.5">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-xs font-black text-[#3F2A1D] uppercase tracking-wide">Multi-Model Parallel Setup</div>
+                          <p className="text-[11px] text-[#A08B7A] font-medium">Run Gemma (Brain) and a Vision model (Eyes) side-by-side</p>
+                        </div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          Multi-Select
+                        </span>
+                      </div>
 
-                    {localOllamaModel !== CHALK_LOCAL_DOWNLOAD_MODEL && !isModelInstalled && (
-                      <p className="text-[11px] font-semibold text-[#6B4423]">
-                        To use {localOllamaModel} offline, run: <code className="bg-[#E7DDD2] px-1.5 py-0.5 rounded text-[10px] font-mono select-all">ollama run {localOllamaModel}</code>
-                      </p>
-                    )}
+                      {/* 1. Primary Teaching Brain */}
+                      <div className="p-3 bg-[#F6F0E8] rounded-2xl border border-[#E7DDD2] space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-[#3F2A1D] flex items-center gap-1.5">
+                            <span className="text-sm">🧠</span> Primary Brain (Whiteboard Tools & Logic)
+                          </label>
+                          <span className="text-[9.5px] font-bold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-md border border-emerald-300">
+                            Active
+                          </span>
+                        </div>
+                        <select
+                          value={localOllamaModel}
+                          onChange={e => setLocalOllamaModel(e.target.value)}
+                          className={inputCls}
+                        >
+                          <option value={CHALK_LOCAL_DOWNLOAD_MODEL}>Inclu local model (inclu-gemma:2b) — Recommended</option>
+                          {detectedOllamaModels.filter(m => !/moondream|llava|bakllava/i.test(m) && m !== CHALK_LOCAL_DOWNLOAD_MODEL && m !== 'chalk-model:latest' && m !== 'chalk-gemma:2b').map(m => (
+                            <option key={m} value={m}>{m} (installed locally)</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* 2. Vision Co-Processor (Eyes) */}
+                      <div className="p-3 bg-[#F6F0E8] rounded-2xl border border-[#E7DDD2] space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-[#3F2A1D] flex items-center gap-1.5">
+                            <span className="text-sm">👁️</span> Vision Eyes (Canvas OCR & Sketch Reader)
+                          </label>
+                          <span className="text-[9.5px] font-bold text-purple-800 bg-purple-100/90 px-2 py-0.5 rounded-md border border-purple-300">
+                            Parallel
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setLocalVisionModel('none')}
+                            className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${
+                              localVisionModel === 'none'
+                                ? 'bg-[#6B4423] text-white border-[#6B4423] font-bold shadow-xs'
+                                : 'bg-[#FFF6EE] border-[#E7DDD2] text-[#3F2A1D] hover:bg-white'
+                            }`}
+                          >
+                            <div className="text-[11px] font-bold leading-tight">None</div>
+                            <div className={`text-[9px] mt-0.5 ${localVisionModel === 'none' ? 'text-white/80' : 'text-[#A08B7A]'}`}>Text-only</div>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setLocalVisionModel('moondream')}
+                            className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${
+                              localVisionModel === 'moondream'
+                                ? 'bg-[#6B4423] text-white border-[#6B4423] font-bold shadow-xs'
+                                : 'bg-[#FFF6EE] border-[#E7DDD2] text-[#3F2A1D] hover:bg-white'
+                            }`}
+                          >
+                            <div className="text-[11px] font-bold leading-tight flex items-center justify-between">
+                              <span>Moondream 2</span>
+                              {detectedOllamaModels.some(m => m.toLowerCase().includes('moondream')) && (
+                                <span className={`text-[8px] font-bold px-1 rounded ${localVisionModel === 'moondream' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'}`}>Ready</span>
+                              )}
+                            </div>
+                            <div className={`text-[9px] mt-0.5 ${localVisionModel === 'moondream' ? 'text-white/80' : 'text-[#A08B7A]'}`}>~1.8B Ultra-fast</div>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setLocalVisionModel('llava:7b')}
+                            className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${
+                              localVisionModel === 'llava:7b'
+                                ? 'bg-[#6B4423] text-white border-[#6B4423] font-bold shadow-xs'
+                                : 'bg-[#FFF6EE] border-[#E7DDD2] text-[#3F2A1D] hover:bg-white'
+                            }`}
+                          >
+                            <div className="text-[11px] font-bold leading-tight flex items-center justify-between">
+                              <span>LLaVA 7B</span>
+                              {detectedOllamaModels.some(m => m.toLowerCase().includes('llava')) && (
+                                <span className={`text-[8px] font-bold px-1 rounded ${localVisionModel === 'llava:7b' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'}`}>Ready</span>
+                              )}
+                            </div>
+                            <div className={`text-[9px] mt-0.5 ${localVisionModel === 'llava:7b' ? 'text-white/80' : 'text-[#A08B7A]'}`}>Accurate OCR</div>
+                          </button>
+                        </div>
+
+                        {localVisionModel !== 'none' && !detectedOllamaModels.some(m => m.toLowerCase().includes(localVisionModel.split(':')[0])) && (
+                          <p className="text-[10.5px] text-[#6B4423] font-medium leading-relaxed">
+                            To use {localVisionModel} in parallel, run in terminal: <code className="bg-[#E7DDD2] px-1 py-0.5 rounded font-mono text-[10px] select-all">ollama run {localVisionModel}</code>
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Active Side-by-Side Notification Banner */}
+                      {localVisionModel !== 'none' && (
+                        <div className="p-3 bg-gradient-to-r from-amber-50 to-emerald-50 rounded-2xl border border-amber-200/90 flex items-center justify-between shadow-2xs">
+                          <div className="flex items-center gap-2">
+                            <Sparkles size={16} className="text-amber-600 shrink-0" />
+                            <div className="text-xs">
+                              <span className="font-extrabold text-[#3F2A1D]">Dual-Model Pipeline: </span>
+                              <span className="font-semibold text-[#6B4423]">
+                                {localOllamaModel} (Brain) + {localVisionModel} (Eyes)
+                              </span>
+                            </div>
+                          </div>
+                          <span className="text-[9.5px] font-black uppercase tracking-wider bg-emerald-600 text-white px-2.5 py-0.5 rounded-full shadow-2xs shrink-0">
+                            Side-by-Side
+                          </span>
+                        </div>
+                      )}
+                    </div>
 
                     {localModelReady ? (
                       <div className="p-3.5 bg-emerald-50 rounded-2xl border border-emerald-200/80 flex items-center justify-between">

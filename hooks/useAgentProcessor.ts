@@ -90,9 +90,9 @@ export const useAgentProcessor = (canvasRef: React.MutableRefObject<any>) => {
 
   const execute = async (x: number, y: number, label: string, taskFn: () => void | Promise<void>) => {
     const canvas = canvasRef.current;
-    const focus = async (bounds: { left: number; top: number; width: number; height: number }) => {
+    const focus = async (bounds: { left: number; top: number; width: number; height: number }, targetZoom = 0.75) => {
       if (!canvas || canvas.__isPanning) return;
-      await smoothFocusCanvas(canvas, bounds);
+      await smoothFocusCanvas(canvas, bounds, { duration: 800, showReticle: true, targetZoom, maxZoom: 0.75 });
     };
     const followsContent = !['Panning...', 'Observing...', 'Deleting...'].includes(label);
     const previousObjects = new Set(canvas?.getObjects() || []);
