@@ -333,6 +333,13 @@ async function startServer() {
       if (room.lessonNotes) {
         socket.emit("class-notes", { text: room.lessonNotes });
       }
+      socket.emit("canvas-init", room.state || []);
+      if (room.lastViewport) {
+        socket.emit("viewport-update", { socketId: 'host', viewport: room.lastViewport });
+      }
+      if (room.domElements) {
+        socket.emit("dom-elements-init", room.domElements);
+      }
       io.to(hello.roomId).emit("class-roster", publicRoster(room.students));
       saveRooms(rooms);
       logger.info("Student joined class", { socketId: socket.id, roomId: hello.roomId, studentId: hello.studentId });
@@ -499,6 +506,18 @@ async function startServer() {
     });
 
     // Receive viewport updates
+    socket.on("canvas-request", () => {
+      const roomId = socket.data.roomId;
+      if (!roomId) return;
+      const room = rooms.get(roomId);
+      if (room) {
+        socket.emit("canvas-init", room.state || []);
+        if (room.lastViewport) {
+          socket.emit("viewport-update", { socketId: 'host', viewport: room.lastViewport });
+        }
+      }
+    });
+
     socket.on("viewport-update", ({ roomId, viewport }) => {
       if (socket.data.role === "student") return;
       if (typeof roomId !== "string" || !roomId.trim() || roomId.length > 128 || !viewport) return;

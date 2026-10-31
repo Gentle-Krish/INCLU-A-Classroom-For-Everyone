@@ -11,6 +11,8 @@ class ClayButton extends StatefulWidget {
     this.lip = ChalkColors.peachLip,
     this.foreground = Colors.white,
     this.icon,
+    this.fontSize = 22,
+    this.semanticHint,
   });
 
   final String label;
@@ -19,6 +21,8 @@ class ClayButton extends StatefulWidget {
   final Color lip;
   final Color foreground;
   final Widget? icon;
+  final double fontSize;
+  final String? semanticHint;
 
   @override
   State<ClayButton> createState() => _ClayButtonState();
@@ -34,13 +38,20 @@ class _ClayButtonState extends State<ClayButton> {
 
   @override
   Widget build(BuildContext context) {
+    final enabled = widget.onPressed != null;
+    final buttonColor = enabled ? widget.color : ChalkColors.box;
+    final lipColor = enabled ? widget.lip : ChalkColors.dash;
+    final textColor = enabled ? widget.foreground : ChalkColors.brown;
+
     return Semantics(
       button: true,
+      enabled: enabled,
       label: widget.label,
+      hint: widget.semanticHint,
       child: GestureDetector(
-        onTapDown: (_) => _setDown(true),
-        onTapUp: (_) => _setDown(false),
-        onTapCancel: () => _setDown(false),
+        onTapDown: enabled ? (_) => _setDown(true) : null,
+        onTapUp: enabled ? (_) => _setDown(false) : null,
+        onTapCancel: enabled ? () => _setDown(false) : null,
         onTap: widget.onPressed,
         child: SizedBox(
           height: 70,
@@ -54,7 +65,7 @@ class _ClayButtonState extends State<ClayButton> {
                 child: Container(
                   height: 64,
                   decoration: BoxDecoration(
-                    color: widget.lip,
+                    color: lipColor,
                     borderRadius: BorderRadius.circular(32),
                   ),
                 ),
@@ -68,7 +79,7 @@ class _ClayButtonState extends State<ClayButton> {
                 height: 64,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: widget.color,
+                    color: buttonColor,
                     borderRadius: BorderRadius.circular(32),
                   ),
                   child: Row(
@@ -76,15 +87,18 @@ class _ClayButtonState extends State<ClayButton> {
                     children: [
                       if (widget.icon != null) ...[
                         widget.icon!,
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 8),
                       ],
-                      Text(
-                        widget.label,
-                        style: TextStyle(
-                          color: widget.foreground,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.2,
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          widget.label,
+                          style: TextStyle(
+                            color: textColor,
+                            fontSize: widget.fontSize,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.2,
+                          ),
                         ),
                       ),
                     ],

@@ -1,4 +1,4 @@
-import 'package:chalk_student/join/class_digits.dart';
+import 'package:inclu_student/join/class_digits.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

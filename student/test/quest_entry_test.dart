@@ -1,9 +1,9 @@
-import 'package:chalk_student/quest/quest_mouth.dart';
-import 'package:chalk_student/quest/quest_pack.dart';
-import 'package:chalk_student/quest/quest_play_screen.dart';
-import 'package:chalk_student/screens/ask_board_screen.dart';
-import 'package:chalk_student/screens/connected_screen.dart';
-import 'package:chalk_student/theme/chalk_theme.dart';
+import 'package:inclu_student/quest/quest_mouth.dart';
+import 'package:inclu_student/quest/quest_pack.dart';
+import 'package:inclu_student/quest/quest_play_screen.dart';
+import 'package:inclu_student/screens/ask_board_screen.dart';
+import 'package:inclu_student/screens/connected_screen.dart';
+import 'package:inclu_student/theme/chalk_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 

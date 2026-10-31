@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:chalk_student/main.dart';
-import 'package:chalk_student/notes/notes_revision.dart';
-import 'package:chalk_student/screens/connected_screen.dart';
-import 'package:chalk_student/screens/revise_notes_screen.dart';
+import 'package:inclu_student/main.dart';
+import 'package:inclu_student/notes/notes_revision.dart';
+import 'package:inclu_student/screens/connected_screen.dart';
+import 'package:inclu_student/screens/revise_notes_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 

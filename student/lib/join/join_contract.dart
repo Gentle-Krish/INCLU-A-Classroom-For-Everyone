@@ -30,6 +30,13 @@ const String chalkStudentReply = 'student-reply';
 /// Lesson text the teacher saved.
 const String chalkClassNotes = 'class-notes';
 
+/// Canvas and whiteboard synchronization
+const String chalkCanvasInit = 'canvas-init';
+const String chalkCanvasUpdate = 'canvas-update';
+const String chalkCanvasDelta = 'canvas-delta';
+const String chalkViewportUpdate = 'viewport-update';
+const String chalkCanvasRequest = 'canvas-request';
+
 /// UDP 3031 payload, UTF-8 JSON. The phone uses the sender address as the host
 /// and `port` (also `socketPort`) as the Socket.IO port.
 /// Laptop shape: {"room":"4821","classNumber":"4821","port":3000}

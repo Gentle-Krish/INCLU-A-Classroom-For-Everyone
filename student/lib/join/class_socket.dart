@@ -15,6 +15,10 @@ class ClassSocket {
   void Function(Object? data)? onQuestList;
   void Function(String answer)? onBoardReply;
   void Function(String notes)? onClassNotes;
+  void Function(Object? data)? onCanvasInit;
+  void Function(Object? data)? onCanvasUpdate;
+  void Function(Map<String, dynamic> delta)? onCanvasDelta;
+  void Function(List<double> viewport)? onViewportUpdate;
 
   Future<void> hello({
     required String host,
@@ -86,6 +90,29 @@ class ClassSocket {
       if (notes == null) return;
       onClassNotes?.call(notes);
     });
+    socket.on(chalkCanvasInit, (data) {
+      if (generation != _generation) return;
+      onCanvasInit?.call(data);
+    });
+    socket.on(chalkCanvasUpdate, (data) {
+      if (generation != _generation) return;
+      onCanvasUpdate?.call(data);
+    });
+    socket.on(chalkCanvasDelta, (data) {
+      if (generation != _generation) return;
+      if (data is Map) {
+        onCanvasDelta?.call(Map<String, dynamic>.from(data));
+      }
+    });
+    socket.on(chalkViewportUpdate, (data) {
+      if (generation != _generation) return;
+      if (data is Map && data['viewport'] is List) {
+        final list = (data['viewport'] as List)
+            .map((e) => (e as num).toDouble())
+            .toList();
+        onViewportUpdate?.call(list);
+      }
+    });
     socket.onConnect((_) {
       socket.emit(chalkStudentHello, {
         'roomId': room,
@@ -132,6 +159,10 @@ class ClassSocket {
     final line = text.replaceAll(RegExp(r'\s+'), ' ').trim();
     if (line.isEmpty) return;
     _socket?.emit(chalkStudentAsk, {'text': line, 'lessonPart': lessonPart});
+  }
+
+  void requestCanvasSnapshot() {
+    _socket?.emit(chalkCanvasRequest);
   }
 
   Future<void> close() async {
