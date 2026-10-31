@@ -210,6 +210,88 @@ export function evaluateJevSystemOne(
   }
 
   // 1. Instant Reflex Handlers (<15ms, zero LLM roundtrip)
+  const COLOR_NAME_MAP: Record<string, string> = {
+    red: '#EF4444', merah: '#EF4444',
+    blue: '#3B82F6', biru: '#3B82F6',
+    green: '#10B981', hijau: '#10B981',
+    yellow: '#F59E0B', kuning: '#F59E0B',
+    orange: '#F97316', oranye: '#F97316',
+    purple: '#8B5CF6', ungu: '#8B5CF6',
+    pink: '#EC4899', merahmuda: '#EC4899',
+    black: '#1F2937', hitam: '#1F2937',
+    white: '#FFFFFF', putih: '#FFFFFF',
+    brown: '#6B4423', cokelat: '#6B4423',
+    cyan: '#06B6D4',
+    gray: '#6B7280', grey: '#6B7280', abu: '#6B7280',
+  };
+
+  const isEraseScribble =
+    /\b(?:erase|delete|remove|clear|hapus|bersihkan)\s+(?:the\s+)?(?:all\s+)?(?:scribble|scribbles|drawing|drawings|sketch|sketches|coretan|gambar|handwriting)\b/i.test(norm) ||
+    /\b(?:scribble|scribbles|drawing|drawings|coretan)\s+(?:erase|delete|remove|clear|hapus)\b/i.test(norm);
+
+  if (isEraseScribble && canvas) {
+    const paths = canvas.getObjects().filter((o: any) => o.type === 'path' || o.id?.startsWith('draw_'));
+    if (paths.length > 0) {
+      paths.forEach((p: any) => canvas.remove(p));
+      canvas.requestRenderAll();
+      if (typeof storeState.updatePageData === 'function') {
+        storeState.updatePageData(
+          storeState.currentPageIndex,
+          canvas.toJSON(['id', 'zIndex', 'isDomPlaceholder']),
+          storeState.domElements
+        );
+      }
+      return {
+        handled: true,
+        actionTaken: 'ERASE_SCRIBBLE',
+        message: `🧹 Erased the scribble${paths.length > 1 ? 's' : ''} from the board.`,
+      };
+    } else {
+      return {
+        handled: true,
+        actionTaken: 'ERASE_SCRIBBLE',
+        message: 'There are no scribbles or drawings on the board to erase.',
+      };
+    }
+  }
+
+  const changeColorMatch =
+    norm.match(/\b(?:change|turn|make|recolor|paint|ubah|ganti|warnai)\s+(?:the\s+)?(?:color\s+of\s+(?:the\s+)?)?(?:scribble|scribbles|drawing|drawings|sketch|sketches|coretan)\s+(?:to|into|jadi|menjadi|ke)?\s*([a-zA-Z#0-9]+)/i) ||
+    norm.match(/\b(?:change|recolor|ubah|ganti)\s+(?:the\s+)?color\s+(?:to|into|jadi|menjadi|ke)?\s*([a-zA-Z#0-9]+)\s+(?:of|for)\s+(?:the\s+)?(?:scribble|scribbles|drawing|drawings|coretan)/i);
+
+  if (changeColorMatch && canvas) {
+    const rawColor = changeColorMatch[1].toLowerCase().trim();
+    const resolvedColor = COLOR_NAME_MAP[rawColor] || (rawColor.startsWith('#') ? rawColor : null);
+    if (resolvedColor) {
+      const paths = canvas.getObjects().filter((o: any) => o.type === 'path' || o.id?.startsWith('draw_'));
+      if (paths.length > 0) {
+        paths.forEach((p: any) => {
+          if (p.stroke && p.stroke !== 'transparent') p.set('stroke', resolvedColor);
+          if (p.fill && p.fill !== 'transparent') p.set('fill', resolvedColor);
+        });
+        canvas.requestRenderAll();
+        if (typeof storeState.updatePageData === 'function') {
+          storeState.updatePageData(
+            storeState.currentPageIndex,
+            canvas.toJSON(['id', 'zIndex', 'isDomPlaceholder']),
+            storeState.domElements
+          );
+        }
+        return {
+          handled: true,
+          actionTaken: 'CHANGE_SCRIBBLE_COLOR',
+          message: `🎨 Changed the scribble color to ${rawColor}.`,
+        };
+      } else {
+        return {
+          handled: true,
+          actionTaken: 'CHANGE_SCRIBBLE_COLOR',
+          message: 'There are no scribbles or drawings on the board to recolor.',
+        };
+      }
+    }
+  }
+
   const isRunTimerPrompt =
     /\b(?:run|start|resume|play|continue|jalankan|mulai|lanjutkan|turn on|begin)\s+(?:the\s+)?(?:created\s+)?(?:timer|stopwatch)\b/i.test(norm) ||
     /\b(?:timer|stopwatch)\s+(?:run|start|resume|play|jalankan|mulai)\b/i.test(norm) ||
@@ -884,6 +966,9 @@ export const useGeminiBrain = () => {
             baseData.svgContent = obj.svgSource;
           } else if (obj.type === 'i-text' || obj.type === 'text' || obj.type === 'textbox') {
             baseData.textContent = obj.text;
+          } else if (obj.type === 'path' || obj.id?.startsWith('draw_')) {
+            baseData.textContent = 'scribble';
+            baseData.strokeColor = typeof obj.stroke === 'string' ? obj.stroke : (typeof obj.fill === 'string' ? obj.fill : undefined);
           } else if (obj.type === 'group' && typeof obj.getObjects === 'function') {
             for (const inner of obj.getObjects()) {
               if ((inner.type === 'i-text' || inner.type === 'text' || inner.type === 'textbox') && inner.text) {
